@@ -21,9 +21,12 @@ import {
   Sun,
   Moon,
   Monitor,
+  Languages,
   type LucideIcon,
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useTranslations, type AppConfig } from 'use-intl';
+import { LANGUAGES, type Language } from '@/lib/i18n';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { getLandingPage } from '@/components/layout/AuthGuard';
@@ -35,6 +38,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -78,10 +83,15 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { href: '/settings', labelKey: 'settings', icon: Settings, roles: ROLE_ACCESS.ownerManager, businessTypes: null },
 ];
 
+// Registry-derived selectable UI languages (from LANGUAGES where selectable: true).
+const SELECTABLE_LANGUAGES: Language[] = (Object.keys(LANGUAGES) as Language[]).filter(
+  (lang) => LANGUAGES[lang].selectable,
+);
+
 export default function AppSidebar() {
   const pathname = usePathname();
   const { user, currentTenant, logout } = useAuthStore();
-  const { tablesRequired, kdsEnabled, whatsappEnabled, setTablesRequired, setKdsEnabled, setWhatsappEnabled } = usePosSettingsStore();
+  const { tablesRequired, kdsEnabled, whatsappEnabled, setTablesRequired, setKdsEnabled, setWhatsappEnabled, language, setLanguage } = usePosSettingsStore();
   const { isMobile, setOpenMobile } = useSidebar();
   const t = useTranslations('nav');
   const tCommon = useTranslations('common');
@@ -97,6 +107,15 @@ export default function AppSidebar() {
       ? tSettings('themeDark')
       : tSettings('themeSystem');
   const ThemeModeIcon = themeModeIcon;
+
+  // Switching from the sidebar mirrors the Settings dropdown: the store drives
+  // the live UI swap, and the tenant's stored language keeps standalone
+  // surfaces (KDS, server app) in sync on their next load.
+  const changeLanguage = (next: Language) => {
+    if (next === language) return;
+    setLanguage(next);
+    api.put('/settings/business', { language: next }).catch(() => toast.error(tSettings('saveFailed')));
+  };
 
   const role = currentTenant?.role || 'cashier';
   const businessType = currentTenant?.business_type || 'restaurant';
@@ -206,6 +225,37 @@ export default function AppSidebar() {
 
       <SidebarFooter>
         <SidebarMenu>
+          <SidebarMenuItem>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <SidebarMenuButton
+                  tooltip={`${tSettings('languages')}: ${LANGUAGES[language].nativeName}`}
+                >
+                  <Languages className="size-4 shrink-0" />
+                  <span>{tSettings('languages')}</span>
+                  <span className="ms-auto text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+                    {LANGUAGES[language].nativeName}
+                  </span>
+                </SidebarMenuButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                side={isMobile ? 'bottom' : 'top'}
+                align={isMobile ? 'end' : 'start'}
+                className="w-48 rounded-lg"
+              >
+                <DropdownMenuRadioGroup
+                  value={language}
+                  onValueChange={(value) => changeLanguage(value as Language)}
+                >
+                  {SELECTABLE_LANGUAGES.map((lang) => (
+                    <DropdownMenuRadioItem key={lang} value={lang} className="cursor-pointer">
+                      {LANGUAGES[lang].nativeName}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton
               onClick={cycleThemeMode}

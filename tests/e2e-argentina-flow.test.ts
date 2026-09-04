@@ -6,12 +6,12 @@
  * dial code → translation routing.
  *
  * Verifies that:
- *  - Onboarding with country=AR persists the country profile (es-AR, CUIT, IVA, Comprobante)
- *  - Argentina demo seed swaps in the hamburger menu and Spanish customer names with +54
+ *  - Onboarding with country=AR persists the country profile (CUIT, IVA)
+ *  - Argentina demo seed uses +54 customer dial codes regardless of UI language
  *  - Settings save/load round-trips the country and its derived fiscal fields
  *  - Non-Argentina onboarding still gets the legacy India demo (regression guard)
  *  - Tax engine runs the AR path without error
- *  - i18n has matching keys in en and es (no missing translations)
+ *  - i18n has matching keys in en and ru (no missing translations)
  *
  * Usage: node tests/run-electron-node-test.cjs tests/e2e-argentina-flow.test.ts
  */
@@ -122,7 +122,7 @@ async function runArgentinaOnboarding(baseUrl, db) {
       country: 'AR',
       currency: 'ARS',
       timezone: 'America/Argentina/Buenos_Aires',
-      language: 'es',
+      language: 'en',
       terms_accepted: true,
     },
   });
@@ -133,25 +133,22 @@ async function runArgentinaOnboarding(baseUrl, db) {
   assertEqual(tenant.currency, 'ARS', 'tenant.currency = ARS');
   assertEqual(tenant.currency_symbol, '$', 'tenant.currency_symbol = $ (not ARS)');
   assertEqual(tenant.timezone, 'America/Argentina/Buenos_Aires', 'tenant.timezone = AR');
-  assertEqual(tenant.language, 'es', 'tenant.language = es');
+  assertEqual(tenant.language, 'en', 'tenant.language = en');
 
   const curSymbol = db.prepare("SELECT value FROM settings WHERE key = 'currency_symbol'").get();
   assertEqual(curSymbol.value, '$', 'DB currency_symbol = $ for ARS');
 
-  const burger = db.prepare("SELECT id FROM products WHERE id = 'prod-demo-hamburguesa-clasica'").get();
-  assert(!!burger, 'Argentina demo seeds the hamburger menu');
-  const indiaMenu = db.prepare("SELECT id FROM products WHERE id = 'prod-demo-butter-chicken'").get();
-  assert(!indiaMenu, 'Argentina demo does NOT seed the legacy India menu');
-
+  const butterChicken = db.prepare("SELECT id FROM products WHERE id = 'prod-demo-butter-chicken'").get();
+  assert(!!butterChicken, 'AR + English demo still seeds the English catalog');
   const sofia = db.prepare("SELECT id, name, country_code FROM customers WHERE id = 'cust-demo-1'").get();
   assert(!!sofia, 'Argentina demo seeds a demo customer');
   assertEqual(sofia.country_code, '+54', 'demo customer uses +54 country code');
 
   const staffName = db.prepare("SELECT name FROM users WHERE id = 'user-demo-manager'").get();
-  assertEqual(staffName.name, 'Gerente Demo', 'demo staff localized to es');
+  assertEqual(staffName.name, 'Demo Manager', 'demo staff uses English names when UI language is English');
 
-  const cuisine = db.prepare("SELECT name FROM categories WHERE id = 'cat-demo-burger'").get();
-  assertEqual(cuisine.name, 'Hamburguesas', 'demo category localized to es');
+  const cuisine = db.prepare("SELECT name FROM categories WHERE id = 'cat-demo-main'").get();
+  assertEqual(cuisine.name, 'Main Course', 'demo category uses English names when UI language is English');
 }
 
 async function runArgentinaSettings(baseUrl, db) {
@@ -209,20 +206,20 @@ async function runArgentinaTranslations(db) {
   console.log('\n4. i18n has matching keys for both languages and every t() reference resolves');
   const i18nDir = path.join(__dirname, '../frontend/src/lib/i18n/messages');
   const enSrc = fs.readFileSync(path.join(i18nDir, 'en.json'), 'utf8');
-  const esSrc = fs.readFileSync(path.join(i18nDir, 'es.json'), 'utf8');
+  const ruSrc = fs.readFileSync(path.join(i18nDir, 'ru.json'), 'utf8');
 
   const enKeys = extractJsonKeys(enSrc);
-  const esKeys = extractJsonKeys(esSrc);
-  assert(enKeys.size > 0 && esKeys.size > 0, 'i18n defines both en and es blocks');
-  if (enKeys.size === 0 || esKeys.size === 0) return;
+  const ruKeys = extractJsonKeys(ruSrc);
+  assert(enKeys.size > 0 && ruKeys.size > 0, 'i18n defines both en and ru blocks');
+  if (enKeys.size === 0 || ruKeys.size === 0) return;
 
-  assertEqual(enKeys.size, esKeys.size, `en and es have the same number of keys (en=${enKeys.size}, es=${esKeys.size})`);
-  const missingInEs = [...enKeys].filter((k) => !esKeys.has(k));
-  const missingInEn = [...esKeys].filter((k) => !enKeys.has(k));
-  assertEqual(missingInEs.length, 0, `es is missing keys: ${missingInEs.join(', ') || 'none'}`);
+  assertEqual(enKeys.size, ruKeys.size, `en and ru have the same number of keys (en=${enKeys.size}, ru=${ruKeys.size})`);
+  const missingInRu = [...enKeys].filter((k) => !ruKeys.has(k));
+  const missingInEn = [...ruKeys].filter((k) => !enKeys.has(k));
+  assertEqual(missingInRu.length, 0, `ru is missing keys: ${missingInRu.join(', ') || 'none'}`);
   assertEqual(missingInEn.length, 0, `en is missing keys: ${missingInEn.join(', ') || 'none'}`);
 
-  assert(esSrc.includes("'CUIT'") || esSrc.includes("Comprobante") || esSrc.includes("es-AR"), 'i18n includes Argentina-context translations');
+  assert(enSrc.includes('CUIT') || enSrc.includes('tax') || enSrc.includes('invoice'), 'i18n includes fiscal translation keys');
 
   // Walk the entire frontend src tree and assert every `t('key')` reference
   // resolves to a known key. Catches wiring gaps: a developer adds

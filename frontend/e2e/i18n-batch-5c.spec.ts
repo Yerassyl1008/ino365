@@ -76,44 +76,44 @@ test('Batch 5C Pages (Dashboard, Orders, Tables, Customers, OrderHistoryGrid) re
   // 2. PERSIAN (FA) RTL
   // ==========================================
   try {
-    await setLanguage(page, 'fa');
+    await setLanguage(page, 'ru');
 
     // 2a. Dashboard (FA)
     await page.goto(`${BASE}/dashboard`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('پیشخوان');
-    await expect(page.getByText('فروش امروز')).toBeVisible();
-    await expect(page.getByText('سفارش‌های در جریان')).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Панель');
+    await expect(page.getByText('Продажи за сегодня')).toBeVisible();
+    await expect(page.getByText('Текущие заказы')).toBeVisible();
     await captureScreenshot(page, 'dashboard-fa.png');
 
     // 2b. Orders (FA)
     await page.goto(`${BASE}/orders`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('سفارش‌ها');
-    await expect(page.getByPlaceholder('بر پایه شماره سفارش جستجو کنید…')).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Заказы');
+    await expect(page.getByPlaceholder('Поиск по номеру заказа…')).toBeVisible();
     await captureScreenshot(page, 'orders-fa.png');
 
     // 2c. Tables (FA)
     await page.goto(`${BASE}/tables`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('میزها');
-    await expect(page.getByText('افزودن میز')).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Столы');
+    await expect(page.getByText('Добавить стол')).toBeVisible();
     await captureScreenshot(page, 'tables-fa.png');
 
     // 2d. Customers (FA)
     await page.goto(`${BASE}/customers`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('مشتریان');
-    await expect(page.getByText('افزودن مشتری').first()).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Клиенты');
+    await expect(page.getByText('Добавить клиента').first()).toBeVisible();
     await captureScreenshot(page, 'customers-fa.png');
 
     // 2e. Order History Demo (OrderHistoryGrid) (FA)
     await page.goto(`${BASE}/order-history-demo`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('پیشینه سفارش‌ها');
-    await expect(page.getByText('خوردن در محل').first()).toBeVisible();
-    await expect(page.getByText('جمع جزء').first()).toBeVisible();
-    await expect(page.getByText('چاپ رسید').first()).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('История заказов');
+    await expect(page.getByText('В зале').first()).toBeVisible();
+    await expect(page.getByText('Подытог').first()).toBeVisible();
+    await expect(page.getByText('Печать чека').first()).toBeVisible();
     await captureScreenshot(page, 'order-history-grid-fa.png');
 
   } finally {

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Language } from '@/lib/i18n';
+import { isLanguage, type Language } from '@/lib/i18n';
 import { defaultPrintLanguagePolicy } from '@print/policy';
 import type {
   KotLanguagePolicy,
@@ -206,7 +206,11 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       // would otherwise keep a value nothing in the app still recognizes.
       // v3: web print now shares the main printerPaperSize setting, and bill
       // content controls gained explicit customer/table/tax-breakdown flags.
-      version: 3,
+      // v4: the UI language set was reduced to the registry in
+      // frontend/src/lib/i18n/languages.ts. A browser still holding a
+      // removed language would keep a key nothing resolves, so it falls
+      // back to English.
+      version: 4,
       migrate: (persisted, version) => {
         const state = persisted as Record<string, unknown>;
         if (version < 1) {
@@ -232,6 +236,9 @@ export const usePosSettingsStore = create<PosSettingsState>()(
           state.billShowCustomerName ??= true;
           state.billShowCustomerPhone ??= true;
           state.billShowTableNumber ??= true;
+        }
+        if (version < 4 && !isLanguage(state.language)) {
+          state.language = 'en';
         }
         return state as unknown as PosSettingsState;
       },

@@ -34,7 +34,7 @@ import {
 import type { LanguageRegistryFacts } from '../shared/print';
 
 // Test registry: mirrors what a call site injects from the central registry.
-const SELECTABLE = new Set(['en', 'es', 'fr', 'pt', 'fa']);
+const SELECTABLE = new Set(['en', 'ru', 'kk']);
 const FACTS: LanguageRegistryFacts = {
   isSelectableLanguage: (code) => SELECTABLE.has(code),
 };
@@ -53,32 +53,32 @@ assert.deepEqual(
   'inherit with no additional resolves to the store language alone',
 );
 assert.deepEqual(
-  resolveReceiptLanguages({ primary: { mode: 'fixed', language: 'fa' }, additional: [] }, 'en'),
-  ['fa'],
+  resolveReceiptLanguages({ primary: { mode: 'fixed', language: 'ru' }, additional: [] }, 'en'),
+  ['ru'],
   'fixed primary overrides the store language',
 );
 assert.deepEqual(
-  resolveReceiptLanguages({ primary: inherit(), additional: ['fa'] as const }, 'en'),
-  ['en', 'fa'],
+  resolveReceiptLanguages({ primary: inherit(), additional: ['ru'] as const }, 'en'),
+  ['en', 'ru'],
   'additional language follows the resolved primary',
 );
 assert.deepEqual(
-  resolveReceiptLanguages({ primary: { mode: 'fixed', language: 'fa' }, additional: ['fa'] as const }, 'en'),
-  ['fa'],
+  resolveReceiptLanguages({ primary: { mode: 'fixed', language: 'ru' }, additional: ['ru'] as const }, 'en'),
+  ['ru'],
   'additional equal to the fixed primary collapses (dedupe)',
 );
 assert.deepEqual(
-  resolveReceiptLanguages({ primary: inherit(), additional: ['es'] as const }, 'es'),
-  ['es'],
+  resolveReceiptLanguages({ primary: inherit(), additional: ['kk'] as const }, 'kk'),
+  ['kk'],
   'additional equal to the inherited store language collapses',
 );
 assert.ok(
   resolveReceiptLanguages({ primary: inherit(), additional: [] }, 'en').length <= MAX_RECEIPT_LANGUAGES,
 );
 
-assert.equal(resolveKotLanguage({ primary: inherit(), additional: [] }, 'fa'), 'fa');
-assert.equal(resolveKotLanguage({ primary: { mode: 'fixed', language: 'en' }, additional: [] }, 'fa'), 'en');
-assert.equal(resolvePrimaryLanguage({ mode: 'inherit' }, 'pt'), 'pt');
+assert.equal(resolveKotLanguage({ primary: inherit(), additional: [] }, 'ru'), 'ru');
+assert.equal(resolveKotLanguage({ primary: { mode: 'fixed', language: 'en' }, additional: [] }, 'ru'), 'en');
+assert.equal(resolvePrimaryLanguage({ mode: 'inherit' }, 'kk'), 'kk');
 
 // Type-level max-2 for v1: these shapes must compile; the runtime parser also
 // enforces ≤1 additional entry (see validation tests below).
@@ -97,12 +97,12 @@ assert.ok(valid.ok);
 assert.deepEqual(valid.policy, { primary: { mode: 'inherit' }, additional: [] });
 
 const fixedWithAdditional = parsePrintLanguagePolicy(
-  { primary: { mode: 'fixed', language: 'fa' }, additional: ['es'] },
+  { primary: { mode: 'fixed', language: 'ru' }, additional: ['kk'] },
   FACTS,
 );
 assert.ok(fixedWithAdditional.ok);
 if (fixedWithAdditional.ok) {
-  assert.deepEqual(resolveReceiptLanguages(fixedWithAdditional.policy, 'en'), ['fa', 'es']);
+  assert.deepEqual(resolveReceiptLanguages(fixedWithAdditional.policy, 'en'), ['ru', 'kk']);
 }
 
 const badCases: Array<[unknown, RegExp]> = [
@@ -112,21 +112,21 @@ const badCases: Array<[unknown, RegExp]> = [
   [{ primary: { mode: 'auto' } }, /mode must be "inherit" or "fixed"/],
   [{ primary: { mode: 'fixed' } }, /non-empty string/],
   [{ primary: { mode: 'fixed', language: '' } }, /non-empty string/],
-  [{ primary: { mode: 'fixed', language: 'de' } }, /not a registered selectable language/],
+  [{ primary: { mode: 'fixed', language: 'zz' } }, /not a registered selectable language/],
   [
-    { primary: { mode: 'inherit' }, additional: ['de'] },
+    { primary: { mode: 'inherit' }, additional: ['zz'] },
     /not a registered selectable language/,
   ],
   [
-    { primary: { mode: 'inherit' }, additional: ['fa', 'es'] },
+    { primary: { mode: 'inherit' }, additional: ['ru', 'kk'] },
     /at most 1 entry/,
   ],
   [
-    { primary: { mode: 'inherit' }, additional: ['fa', 'fa'] },
+    { primary: { mode: 'inherit' }, additional: ['ru', 'ru'] },
     /at most 1 entry/,
   ],
   [
-    { primary: { mode: 'fixed', language: 'fa' }, additional: ['fa'] },
+    { primary: { mode: 'fixed', language: 'ru' }, additional: ['ru'] },
     /duplicates the fixed primary/,
   ],
   [{ primary: { mode: 'inherit' }, extra: true }, /unknown policy key "extra"/],
@@ -139,9 +139,9 @@ for (const [payload, pattern] of badCases) {
 }
 
 // KOT policies are single-primary: any additional entry is rejected.
-const kotValid = parseKotLanguagePolicy({ primary: { mode: 'fixed', language: 'fa' }, additional: [] }, FACTS);
+const kotValid = parseKotLanguagePolicy({ primary: { mode: 'fixed', language: 'ru' }, additional: [] }, FACTS);
 assert.ok(kotValid.ok);
-const kotBad = parseKotLanguagePolicy({ primary: inherit(), additional: ['es'] }, FACTS);
+const kotBad = parseKotLanguagePolicy({ primary: inherit(), additional: ['kk'] }, FACTS);
 assert.ok(!kotBad.ok);
 assert.match(kotBad.ok ? '' : kotBad.error, /at most 0 entries/);
 

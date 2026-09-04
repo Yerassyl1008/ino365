@@ -1,6 +1,5 @@
 <div align="center">
   <h1>FloCafe</h1>
-  <p><a href="README.es.md">Español</a> · <a href="README.pt.md">Português</a> · <a href="README.fr.md">Français</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.fil.md">Filipino</a> · <a href="README.de.md">Deutsch</a></p>
   <p><strong>Free, open-source, offline-first point of sale for cafés, restaurants, and small kitchens.</strong></p>
   <p>
     <a href="https://flopos.com">Website</a> ·
@@ -102,15 +101,10 @@ Core POS operation and local data are offline-first. Order entry, billing, KDS c
 FloCafe includes UI translations for:
 
 - English
-- Spanish
-- French
-- Brazilian Portuguese
-- Filipino
-- Turkish
-- Persian (Farsi), including RTL support
-- German
+- Russian (Русский)
+- Kazakh (Қазақша)
 
-UI language is independent of store country and regional settings, and tax calculation rules remain a separate concern. For details on contributing translations or adding languages, see the [Internationalization and translation guide](docs/i18n.md).
+The UI language can be switched from the app sidebar, from Settings, or during the setup wizard. UI language is independent of store country and regional settings, and tax calculation rules remain a separate concern. For details on contributing translations or adding languages, see the [Internationalization and translation guide](docs/i18n.md).
 
 FloCafe ships with 131 country profiles covering 109 currencies. Each profile sets a default currency, locale, and setup timezone; store owners can override the timezone during setup or later in Settings.
 

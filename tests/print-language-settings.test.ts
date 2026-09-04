@@ -52,16 +52,16 @@ if (objectPayload.ok) {
 }
 
 const stringPayload = validateLanguagePolicySetting(BILL_LANGUAGE_POLICY_KEY,
-  '{"primary":{"mode":"fixed","language":"fa"},"additional":["es"]}');
+  '{"primary":{"mode":"fixed","language":"ru"},"additional":["kk"]}');
 assert.ok(stringPayload.ok);
 if (stringPayload.ok) {
   const stored = JSON.parse(stringPayload.stored);
-  assert.deepEqual(stored.primary, { mode: 'fixed', language: 'fa' });
-  assert.deepEqual(stored.additional, ['es']);
+  assert.deepEqual(stored.primary, { mode: 'fixed', language: 'ru' });
+  assert.deepEqual(stored.additional, ['kk']);
 }
 
 const kotFixed = validateLanguagePolicySetting(KOT_LANGUAGE_POLICY_KEY,
-  '{"primary":{"mode":"fixed","language":"pt"},"additional":[]}');
+  '{"primary":{"mode":"fixed","language":"kk"},"additional":[]}');
 assert.ok(kotFixed.ok);
 
 console.log('✓ canonical storage');
@@ -71,11 +71,11 @@ const rejections: Array<[string, unknown]> = [
   [BILL_LANGUAGE_POLICY_KEY, 'not json'],
   [BILL_LANGUAGE_POLICY_KEY, '{"primary":{"mode":"fixed","language":"xx"}}'],
   [BILL_LANGUAGE_POLICY_KEY, '{"primary":{"mode":"auto"}}'],
-  [BILL_LANGUAGE_POLICY_KEY, '{"primary":{"mode":"inherit"},"additional":["fa","es"]}'],
-  [BILL_LANGUAGE_POLICY_KEY, '{"primary":{"mode":"inherit"},"additional":["fa","fa"]}'],
+  [BILL_LANGUAGE_POLICY_KEY, '{"primary":{"mode":"inherit"},"additional":["ru","kk"]}'],
+  [BILL_LANGUAGE_POLICY_KEY, '{"primary":{"mode":"inherit"},"additional":["ru","ru"]}'],
   [BILL_LANGUAGE_POLICY_KEY, '{"primary":{"mode":"inherit"},"bogus":1}'],
   // KOT is single-primary in v1.
-  [KOT_LANGUAGE_POLICY_KEY, '{"primary":{"mode":"inherit"},"additional":["fa"]}'],
+  [KOT_LANGUAGE_POLICY_KEY, '{"primary":{"mode":"inherit"},"additional":["ru"]}'],
 ];
 for (const [key, value] of rejections) {
   const result = validateLanguagePolicySetting(key, value);
@@ -99,7 +99,7 @@ assert.deepEqual(
   { primary: { mode: 'inherit' }, additional: [] },
 );
 const okStored = parseStoredLanguagePolicy(BILL_LANGUAGE_POLICY_KEY,
-  '{"primary":{"mode":"fixed","language":"fa"},"additional":["en"]}');
+  '{"primary":{"mode":"fixed","language":"ru"},"additional":["en"]}');
 assert.ok('primary' in okStored && okStored.primary.mode === 'fixed');
 
 console.log('✓ lenient reader with safe fallback');

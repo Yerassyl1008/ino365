@@ -30,57 +30,19 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/en.json'),
   },
-  es: {
-    locale: 'es',
-    nativeName: 'Español',
+  ru: {
+    locale: 'ru-RU',
+    nativeName: 'Русский',
     direction: 'ltr',
     selectable: true,
-    load: () => import('./messages/es.json'),
+    load: () => import('./messages/ru.json'),
   },
-  de: {
-    locale: 'de-DE',
-    nativeName: 'Deutsch',
+  kk: {
+    locale: 'kk-KZ',
+    nativeName: 'Қазақша',
     direction: 'ltr',
     selectable: true,
-    load: () => import('./messages/de.json'),
-  },
-  tr: {
-    locale: 'tr-TR',
-    nativeName: 'Türkçe',
-    direction: 'ltr',
-    selectable: true,
-    load: () => import('./messages/tr.json'),
-  },
-  fil: {
-    locale: 'fil-PH',
-    nativeName: 'Filipino',
-    direction: 'ltr',
-    selectable: true,
-    load: () => import('./messages/fil.json'),
-  },
-
-  fr: {
-    locale: 'fr-FR',
-    nativeName: 'Français',
-    direction: 'ltr',
-    selectable: true,
-    load: () => import('./messages/fr.json'),
-  },
-  pt: {
-    locale: 'pt-BR',
-    nativeName: 'Português',
-    direction: 'ltr',
-    selectable: true,
-    load: () => import('./messages/pt.json'),
-  },
-  fa: {
-    locale: 'fa-IR',
-    nativeName: 'فارسی',
-    direction: 'rtl',
-    // Persian has complete message parity and RTL coverage, so it is ready
-    // for end-user selection (#241 / #372).
-    selectable: true,
-    load: () => import('./messages/fa.json'),
+    load: () => import('./messages/kk.json'),
   },
 } as const satisfies Record<string, LanguageConfig>;
 

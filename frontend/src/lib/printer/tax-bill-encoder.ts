@@ -15,7 +15,7 @@
 
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Bill, Tenant } from '@/lib/types';
-import { normalizeCurrencyToAscii, normalizeGermanThermalText, padCurrencyPrefix } from './unicode';
+import { foldThermalText, normalizeCurrencyToAscii, padCurrencyPrefix } from './unicode';
 import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
@@ -315,15 +315,15 @@ export function buildTaxBillBytes(
 // ---------------------------------------------------------------------------
 
 function padRowForLanguage(left: string, right: string, cols: number, language?: string): string {
-  const normalizedLeft = language === 'de' ? normalizeGermanThermalText(left) : left;
-  const normalizedRight = language === 'de' ? normalizeGermanThermalText(right) : right;
+  const normalizedLeft = foldThermalText(language, left);
+  const normalizedRight = foldThermalText(language, right);
   const safeRight = normalizedRight.length > cols ? normalizedRight.slice(-cols) : normalizedRight;
   const leftWidth = Math.max(0, cols - safeRight.length - 1);
   return normalizedLeft.slice(0, leftWidth) + (leftWidth > 0 ? ' ' : '') + safeRight;
 }
 
 function truncateForLanguage(str: string, max: number, language?: string): string {
-  const normalized = language === 'de' ? normalizeGermanThermalText(str) : str;
+  const normalized = foldThermalText(language, str);
   return normalized.length > max ? normalized.slice(0, max - 1) + '…' : normalized;
 }
 

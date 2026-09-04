@@ -3,7 +3,7 @@
  *
  * Extends the shared direction foundation (Batch C), the Setup/Auth/Settings
  * guard (Batch D), and the Dashboard/POS guard (Batch E) to the remaining
- * Persian-facing operational surfaces:
+ * localized operational surfaces:
  *
  *   - standalone KDS (components + pages, incl. disabled state)
  *   - Server App / tableside ordering (standalone page + layout)
@@ -30,7 +30,7 @@
  *      layout carries `HtmlLangSync`.
  *
  *   5. The Server App and KDS disabled states and operational strings must be
- *      localized through i18n keys across all supported languages (en/es/fr/pt/fa).
+ *      localized through i18n keys across every registered language.
  *
  *   6. The Server App inherits the tenant language through the shared
  *      `useSyncServerLanguage` path pointed at `/api/server-app/info`
@@ -97,6 +97,7 @@ const PHYSICAL_UTIL_RE =
 const ALLOWLIST: Record<string, string[]> = {};
 
 function loadComponents(): {
+  LANGUAGES: Record<string, { locale: string; nativeName: string; direction: string }>;
   Ltr: any;
   KdsHtmlLang: any;
   HtmlLangSync: any;
@@ -131,9 +132,10 @@ function loadComponents(): {
     const { KdsHtmlLang } = require('../frontend/src/components/kds/KdsHtmlLang');
     const { HtmlLangSync } = require('../frontend/src/components/layout/HtmlLangSync');
     const { usePosSettingsStore } = require('../frontend/src/store/pos-settings');
-    const { fetchServerInfo, getLanguageDirection, getLanguageLocale, loadLocaleMessages, getCachedMessages } = require('../frontend/src/lib/i18n');
+    const { LANGUAGES, fetchServerInfo, getLanguageDirection, getLanguageLocale, loadLocaleMessages, getCachedMessages } = require('../frontend/src/lib/i18n');
     const { IntlProvider } = frontendRequire('use-intl');
     return {
+      LANGUAGES,
       Ltr,
       KdsHtmlLang,
       HtmlLangSync,
@@ -193,6 +195,7 @@ async function run(): Promise<void> {
 
   // 3. Executable Ltr component isolates Batch F operational values.
   const {
+    LANGUAGES,
     Ltr,
     KdsHtmlLang,
     HtmlLangSync,
@@ -207,9 +210,11 @@ async function run(): Promise<void> {
     ReactDOMServer,
   } = loadComponents();
 
+  const languages = Object.keys(LANGUAGES);
+
   // #375: prime the shared locale cache so synchronous t() resolves the
   // on-demand bundles in this test process.
-  for (const lang of ['en', 'es', 'fr', 'pt', 'fa'] as const) {
+  for (const lang of languages) {
     await loadLocaleMessages(lang);
   }
 
@@ -287,7 +292,7 @@ async function run(): Promise<void> {
   //    #376: HtmlLangSync reads the active locale from the i18n context
   //    (useLocale), so each render is wrapped in an IntlProvider whose locale
   //    matches the language under test.
-  for (const lang of ['en', 'es', 'fr', 'pt', 'fa'] as const) {
+  for (const lang of languages) {
     usePosSettingsStore.getState().setLanguage(lang);
     const kdsMarkup = ReactDOMServer.renderToStaticMarkup(React.createElement(KdsHtmlLang));
     assert(kdsMarkup === '', `KdsHtmlLang must render null, got: ${kdsMarkup}`);
@@ -295,17 +300,17 @@ async function run(): Promise<void> {
       React.createElement(IntlProvider, { locale: getLanguageLocale(lang) }, React.createElement(HtmlLangSync))
     );
     assert(serverMarkup === '', `HtmlLangSync must render null, got: ${serverMarkup}`);
-  }
-
-  assert(getLanguageDirection('fa') === 'rtl', 'Persian (fa) must resolve to rtl');
-  for (const ltrLang of ['en', 'es', 'fr', 'pt'] as const) {
-    assert(getLanguageDirection(ltrLang) === 'ltr', `${ltrLang} must resolve to ltr`);
+    const direction = getLanguageDirection(lang);
+    assert(
+      direction === 'ltr' || direction === 'rtl',
+      `${lang} must sync a known text direction, got: ${direction}`
+    );
   }
   console.log('  ✓ standalone layouts sync document dir/lang (KdsHtmlLang / HtmlLangSync)');
 
   // 5. KDS disabled screens and Server App strings resolve localized i18n keys.
   const { createTranslator } = frontendRequire('use-intl/core');
-  const getTestTranslator = (lang: 'en' | 'es' | 'fr' | 'pt' | 'fa') => {
+  const getTestTranslator = (lang: string) => {
     const messages = getCachedMessages(lang) ?? getCachedMessages('en') ?? {};
     return createTranslator({ locale: getLanguageLocale(lang), messages }) as unknown as (
       key: string,
@@ -313,43 +318,32 @@ async function run(): Promise<void> {
     ) => string;
   };
 
-  const kdsDisabledFa = getTestTranslator('fa')('kds.disabledTitle');
-  assert(
-    kdsDisabledFa && kdsDisabledFa !== 'kds.disabledTitle' && kdsDisabledFa !== 'Kitchen Display is disabled',
-    `kds.disabledTitle in Persian must be localized, got: ${kdsDisabledFa}`
-  );
-  const kdsHintFa = getTestTranslator('fa')('kds.disabledHint');
-  assert(
-    kdsHintFa && kdsHintFa !== 'kds.disabledHint' && !kdsHintFa.includes('This business has turned off'),
-    `kds.disabledHint in Persian must be localized, got: ${kdsHintFa}`
-  );
-
-  const serverAppTitleFa = getTestTranslator('fa')('serverApp.title');
-  assert(
-    serverAppTitleFa && serverAppTitleFa !== 'serverApp.title',
-    `serverApp.title in Persian must be localized, got: ${serverAppTitleFa}`
-  );
-  const serverAppDisabledFa = getTestTranslator('fa')('serverApp.disabledTitle');
-  assert(
-    serverAppDisabledFa && serverAppDisabledFa !== 'serverApp.disabledTitle' && serverAppDisabledFa !== 'Server App is disabled',
-    `serverApp.disabledTitle in Persian must be localized, got: ${serverAppDisabledFa}`
-  );
-
   const tableEn = getTestTranslator('en')('serverApp.tableLabel', { name: '12' });
   assert(tableEn === 'Table 12', `serverApp.tableLabel EN substitution failed, got: ${tableEn}`);
-  const tableFa = getTestTranslator('fa')('serverApp.tableLabel', { name: '12' });
-  assert(tableFa.includes('12') && tableFa !== 'Table 12', `serverApp.tableLabel FA substitution failed, got: ${tableFa}`);
 
-  const guestFa = getTestTranslator('fa')('serverApp.guestFallbackName', { last4: '5678' });
-  assert(guestFa.includes('5678') && !guestFa.startsWith('Guest '), `serverApp.guestFallbackName FA substitution failed, got: ${guestFa}`);
-
-  for (const lang of ['en', 'es', 'fr', 'pt', 'fa'] as const) {
-    for (const key of ['kds.disabledTitle', 'kds.disabledHint', 'serverApp.disabledTitle', 'serverApp.disabledHint']) {
-      const val = getTestTranslator(lang)(key);
-      assert(val && val !== key, `Translation key ${key} must resolve for ${lang}`);
+  for (const lang of languages) {
+    const t = getTestTranslator(lang);
+    for (const key of [
+      'kds.disabledTitle',
+      'kds.disabledHint',
+      'serverApp.title',
+      'serverApp.disabledTitle',
+      'serverApp.disabledHint',
+    ]) {
+      const val = t(key);
+      assert(
+        typeof val === 'string' && val.length > 0 && val !== key,
+        `Translation key ${key} must resolve for ${lang}, got: ${val}`
+      );
     }
+    // Interpolated operational strings must keep their runtime values in
+    // every language, not just English.
+    const table = t('serverApp.tableLabel', { name: '12' });
+    assert(table.includes('12'), `serverApp.tableLabel substitution failed for ${lang}, got: ${table}`);
+    const guest = t('serverApp.guestFallbackName', { last4: '5678' });
+    assert(guest.includes('5678'), `serverApp.guestFallbackName substitution failed for ${lang}, got: ${guest}`);
   }
-  console.log('  ✓ KDS disabled screens use localized i18n keys');
+  console.log(`  ✓ KDS disabled screens use localized i18n keys (${languages.join(', ')})`);
 
   // 6. Executable: Server App inherits the tenant language through the
   //    shared fetchServerInfo path pointed at /api/server-app/info.
@@ -360,13 +354,13 @@ async function run(): Promise<void> {
     fetchCalls.push(String(input));
     return {
       ok: true,
-      json: async () => ({ language: 'fa', country: 'IR', kds_default_view: null }),
+      json: async () => ({ language: 'ru', country: 'IR', kds_default_view: null }),
     };
   }) as any;
   (global as any).window = {};
   try {
     const info = await fetchServerInfo('http://192.168.1.50:3002', 1500, '/api/server-app/info');
-    assert(info.language === 'fa', `Server App info must resolve language 'fa', got: ${info.language}`);
+    assert(info.language === 'ru', `Server App info must resolve language 'ru', got: ${info.language}`);
     assert(info.country === 'IR', `Server App info must resolve country 'IR', got: ${info.country}`);
     assert(
       fetchCalls.length === 1 && fetchCalls[0] === 'http://192.168.1.50:3002/api/server-app/info',

@@ -34,7 +34,7 @@ import {
   itemAmountWidth,
   itemRows,
   itemNameWidth,
-  normalizeGermanThermalText,
+  foldThermalText,
   normalizePrintLanguage,
   pushCenteredWrapped,
   resolveCurrencyPrefix,
@@ -230,9 +230,9 @@ function capitalize(text: string): string {
 /** Column header row, composed from the document's own header labels. */
 function classicItemHeader(block: ItemTableBlock, nameLen: number, amtLen: number, language: string): string {
   const qtyW = 4;
-  const itemLabel = language === 'de' ? normalizeGermanThermalText(labelOf(block.header.item)) : labelOf(block.header.item);
-  const qtyLabel = language === 'de' ? normalizeGermanThermalText(labelOf(block.header.quantity)) : labelOf(block.header.quantity);
-  const amountLabel = language === 'de' ? normalizeGermanThermalText(labelOf(block.header.amount)) : labelOf(block.header.amount);
+  const itemLabel = foldThermalText(language, labelOf(block.header.item));
+  const qtyLabel = foldThermalText(language, labelOf(block.header.quantity));
+  const amountLabel = foldThermalText(language, labelOf(block.header.amount));
   const item = itemLabel.slice(0, nameLen).padEnd(nameLen);
   const qty = qtyLabel.slice(0, qtyW).padEnd(qtyW);
   const amount = amountLabel.slice(0, Math.max(1, amtLen - 1));
@@ -257,7 +257,7 @@ export function renderBillDocumentToClassicLines(
   const trimDecimals = options.trimDecimals === true;
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
   const dash = '-'.repeat(cols);
-  const normalize = (text: string): string => options.language === 'de' ? normalizeGermanThermalText(text) : text;
+  const normalize = (text: string): string => foldThermalText(options.language, text);
 
   lines.push('{INIT}');
 

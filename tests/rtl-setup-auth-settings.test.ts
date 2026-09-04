@@ -18,7 +18,7 @@
  *
  *   2. Directional navigation arrows (`ArrowLeft` / `ArrowRight`) must carry
  *      the shared `.rtl-flip` class so they mirror under `[dir="rtl"]`
- *      (back/forward arrows point the correct way in Persian).
+ *      (back/forward arrows point the correct way in an RTL locale).
  *
  *   3. The shared `Ltr` component must keep rendering `dir="ltr"` with the
  *      `.ltr-island` class through its polymorphic `as` prop (`a`, `code`),
@@ -165,7 +165,8 @@ async function run(): Promise<void> {
 
   console.log('  ✓ Ltr polymorphic rendering (as="a", as="code") verified through React interface');
 
-  // 4. getBrowserLanguage returns 'fa' for fa locales, 'es' for es, 'pt' for pt, 'en' otherwise.
+  // 4. getBrowserLanguage maps navigator preferences onto registered
+  //    languages and falls back to 'en' for everything else.
   const i18nModule = (() => {
     const moduleApi = require('module') as {
       _resolveFilename: (...args: any[]) => string;
@@ -210,40 +211,41 @@ async function run(): Promise<void> {
     }
   }
 
-  withNavigatorLanguage('fa-IR', () => {
-    assert(i18nModule.getBrowserLanguage() === 'fa', 'getBrowserLanguage must return "fa" for fa-IR');
-  });
-  withNavigatorLanguage('fa', () => {
-    assert(i18nModule.getBrowserLanguage() === 'fa', 'getBrowserLanguage must return "fa" for fa');
-  });
-  withNavigatorLanguage('fa-AF', () => {
-    assert(i18nModule.getBrowserLanguage() === 'fa', 'getBrowserLanguage must return "fa" for fa-AF');
-  });
-  withNavigatorLanguage('es-ES', () => {
-    assert(i18nModule.getBrowserLanguage() === 'es', 'getBrowserLanguage must return "es" for es-ES');
-  });
-  withNavigatorLanguage('pt-BR', () => {
-    assert(i18nModule.getBrowserLanguage() === 'pt', 'getBrowserLanguage must return "pt" for pt-BR');
-  });
+  const languages = Object.keys(i18nModule.LANGUAGES) as string[];
+  for (const lang of languages) {
+    const locale = i18nModule.getLanguageLocale(lang);
+    withNavigatorLanguage(locale, () => {
+      assert(i18nModule.getBrowserLanguage() === lang, `getBrowserLanguage must return "${lang}" for ${locale}`);
+    });
+    withNavigatorLanguage(lang, () => {
+      assert(i18nModule.getBrowserLanguage() === lang, `getBrowserLanguage must return "${lang}" for the bare "${lang}" tag`);
+    });
+  }
+  const nonEnglish = languages.filter((lang) => lang !== 'en');
+  const [firstNonEnglish, secondNonEnglish] = nonEnglish;
   withNavigatorLanguage('en-US', () => {
-    assert(i18nModule.getBrowserLanguage() === 'en', 'getBrowserLanguage must return "en" for en-US');
-  });
-  withNavigatorLanguage('fr-FR', () => {
-    assert(i18nModule.getBrowserLanguage() === 'fr', 'getBrowserLanguage must return "fr" for fr-FR');
-  });
-  withNavigatorLanguage('en-US', () => {
-    assert(i18nModule.getBrowserLanguage() === 'es', 'getBrowserLanguage must honor the first supported navigator.languages preference');
-  }, ['es-ES', 'en-US']);
+    assert(
+      i18nModule.getBrowserLanguage() === firstNonEnglish,
+      'getBrowserLanguage must honor the first supported navigator.languages preference',
+    );
+  }, [i18nModule.getLanguageLocale(firstNonEnglish), 'en-US']);
   withNavigatorLanguage('zz-ZZ', () => {
-    assert(i18nModule.getBrowserLanguage() === 'pt', 'getBrowserLanguage must skip unsupported navigator.languages preferences');
-  }, ['zz-ZZ', 'pt-BR']);
+    assert(
+      i18nModule.getBrowserLanguage() === (secondNonEnglish ?? firstNonEnglish),
+      'getBrowserLanguage must skip unsupported navigator.languages preferences',
+    );
+  }, ['zz-ZZ', i18nModule.getLanguageLocale(secondNonEnglish ?? firstNonEnglish)]);
+  withNavigatorLanguage('xx-XX', () => {
+    assert(i18nModule.getBrowserLanguage() === 'en', 'getBrowserLanguage must fallback to "en" for unregistered locales');
+  });
   withNavigatorLanguage(undefined, () => {
     assert(i18nModule.getBrowserLanguage() === 'en', 'getBrowserLanguage must fallback to "en" when navigator is undefined');
   });
-  console.log('  ✓ getBrowserLanguage resolves fa for fa* locales and defaults correctly');
+  console.log(`  ✓ getBrowserLanguage resolves every registered language (${languages.join(', ')}) and defaults correctly`);
 
-  // 5. Translation keys setup.languagePersian and settings.languageFa resolve in all supported languages.
-  const languages = ['en', 'es', 'fr', 'pt', 'fa'] as const;
+  // 5. The language-selection surfaces resolve in every supported language:
+  //    the Setup wizard picker and the Sidebar switcher labels come from the
+  //    message bundles, their option text from the registry's nativeName.
   const { createTranslator } = frontendRequire('use-intl/core');
   // #375: prime the shared locale cache so messages resolve for all locales.
   for (const lang of languages) {
@@ -254,18 +256,20 @@ async function run(): Promise<void> {
       locale: i18nModule.getLanguageLocale(lang),
       messages: i18nModule.getCachedMessages(lang),
     });
-    const setupLabel = t('setup.languagePersian');
-    assert(setupLabel && setupLabel !== 'setup.languagePersian', `setup.languagePersian must be translated in ${lang}, got: ${setupLabel}`);
-    const settingsLabel = t('settings.languageFa');
-    assert(settingsLabel && settingsLabel !== 'settings.languageFa', `settings.languageFa must be translated in ${lang}, got: ${settingsLabel}`);
+    for (const key of ['setup.chooseLanguage', 'setup.chooseLanguageHint', 'settings.languages']) {
+      const label = t(key);
+      assert(
+        typeof label === 'string' && label.length > 0 && label !== key,
+        `${key} must resolve in ${lang}, got: ${label}`,
+      );
+    }
+    const { nativeName } = i18nModule.LANGUAGES[lang];
+    assert(
+      typeof nativeName === 'string' && nativeName.length > 0,
+      `${lang} must expose a nativeName for the language switcher, got: ${nativeName}`,
+    );
   }
-  const tFa = createTranslator({ locale: 'fa-IR', messages: i18nModule.getCachedMessages('fa') });
-  const tEn = createTranslator({ locale: 'en', messages: i18nModule.getCachedMessages('en') });
-  assert(tFa('setup.languagePersian') === 'فارسی', 'setup.languagePersian in fa must be فارسی');
-  assert(tFa('settings.languageFa') === 'فارسی (FA)', 'settings.languageFa in fa must be فارسی (FA)');
-  assert(tEn('setup.languagePersian') === 'Persian', 'setup.languagePersian in en must be Persian');
-  assert(tEn('settings.languageFa') === 'Persian (FA)', 'settings.languageFa in en must be Persian (FA)');
-  console.log('  ✓ setup.languagePersian and settings.languageFa translate across en, es, fr, pt, fa');
+  console.log(`  ✓ language-selection labels and registry display names resolve across ${languages.join(', ')}`);
 
   console.log('\n✅ All RTL/LTR Setup, Auth, and Settings checks passed.');
 }

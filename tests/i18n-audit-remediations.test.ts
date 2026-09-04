@@ -77,7 +77,7 @@ async function run() {
   console.log('Section 1: Web-print Message Loading & BCP-47 Locale Tags');
 
   // 1.1 ensureReceiptMessagesLoaded loads messages into memory
-  for (const lang of ['en', 'es', 'fr', 'pt', 'fa'] as const) {
+  for (const lang of ['en', 'ru', 'kk'] as const) {
     await ensureReceiptMessagesLoaded(lang);
     const cached = getCachedMessages(lang);
     assert(
@@ -141,10 +141,8 @@ async function run() {
 
   const expectedLocaleTags: Record<string, { tag: string; dir: string }> = {
     en: { tag: 'en', dir: 'ltr' },
-    es: { tag: 'es', dir: 'ltr' },
-    fr: { tag: 'fr-FR', dir: 'ltr' },
-    pt: { tag: 'pt-BR', dir: 'ltr' },
-    fa: { tag: 'fa-IR', dir: 'rtl' },
+    ru: { tag: 'ru-RU', dir: 'ltr' },
+    kk: { tag: 'kk-KZ', dir: 'ltr' },
   };
 
   for (const [lang, { tag, dir }] of Object.entries(expectedLocaleTags)) {
@@ -184,7 +182,7 @@ async function run() {
   await printWebBill(
     sampleBill,
     { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
-    { language: 'fa' as any }
+    { language: 'ru' as any }
   );
   assert('printWebBill opens popup window synchronously to preserve user activation', windowOpenedSync === true);
 
@@ -337,7 +335,7 @@ async function run() {
 
   // 2.2 Translation parity in all message files
   const MESSAGES_DIR = path.resolve(__dirname, '../frontend/src/lib/i18n/messages');
-  for (const lang of ['en', 'es', 'fr', 'pt', 'fa']) {
+  for (const lang of ['en', 'ru', 'kk']) {
     const filePath = path.join(MESSAGES_DIR, `${lang}.json`);
     const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     const translation = content?.orders?.itemStatusVoidAdjustment;
@@ -356,7 +354,7 @@ async function run() {
   const messageFiles = fs.readdirSync(MESSAGES_DIR).filter((f) => f.endsWith('.json'));
   assert(
     `Message files dynamically discovered (${messageFiles.length} files: ${messageFiles.join(', ')})`,
-    messageFiles.length >= 4,
+    messageFiles.length >= 3,
   );
 
   // ----------------------------------------------------------------
@@ -565,27 +563,15 @@ async function run() {
   });
 
   visualArtifacts.push({
-    filename: 'tables_ui_void_adjustment_es',
-    title: 'Tables Page UI with Void Adjustment Status (Spanish)',
-    html: renderTablesPageHtml('es', 'ltr'),
+    filename: 'tables_ui_void_adjustment_ru',
+    title: 'Tables Page UI with Void Adjustment Status (Russian)',
+    html: renderTablesPageHtml('ru', 'ltr'),
   });
 
   visualArtifacts.push({
-    filename: 'tables_ui_void_adjustment_fr',
-    title: 'Tables Page UI with Void Adjustment Status (French)',
-    html: renderTablesPageHtml('fr', 'ltr'),
-  });
-
-  visualArtifacts.push({
-    filename: 'tables_ui_void_adjustment_pt',
-    title: 'Tables Page UI with Void Adjustment Status (Portuguese - Brazil)',
-    html: renderTablesPageHtml('pt', 'ltr'),
-  });
-
-  visualArtifacts.push({
-    filename: 'tables_ui_void_adjustment_fa',
-    title: 'Tables Page UI with Void Adjustment Status (Persian RTL)',
-    html: renderTablesPageHtml('fa', 'rtl'),
+    filename: 'tables_ui_void_adjustment_kk',
+    title: 'Tables Page UI with Void Adjustment Status (Kazakh)',
+    html: renderTablesPageHtml('kk', 'ltr'),
   });
 
   // 4.3 Add Web Print Bill HTML Artifacts
@@ -601,50 +587,25 @@ async function run() {
   });
 
   visualArtifacts.push({
-    filename: 'web_print_bill_es',
-    title: 'Web Print Bill (Spanish - lang="es")',
+    filename: 'web_print_bill_ru',
+    title: 'Web Print Bill (Russian - lang="ru-RU")',
     html: generateBillHtml(sampleBill, {
-      business_name: 'FloCafe Madrid',
-      currency: 'EUR',
-      country: 'ES',
-      timezone: 'Europe/Madrid',
-    }, { language: 'es' }),
+      business_name: 'FloCafe Москва',
+      currency: 'RUB',
+      country: 'RU',
+      timezone: 'Europe/Moscow',
+    }, { language: 'ru' }),
   });
 
   visualArtifacts.push({
-    filename: 'web_print_bill_fr_fr',
-    title: 'Web Print Bill (French - lang="fr-FR")',
+    filename: 'web_print_bill_kk',
+    title: 'Web Print Bill (Kazakh - lang="kk-KZ")',
     html: generateBillHtml(sampleBill, {
-      business_name: 'FloCafe Paris',
-      currency: 'EUR',
-      country: 'FR',
-      timezone: 'Europe/Paris',
-    }, { language: 'fr' }),
-  });
-
-  visualArtifacts.push({
-    filename: 'web_print_bill_pt_br',
-    title: 'Web Print Bill (Portuguese - lang="pt-BR")',
-    html: generateBillHtml(sampleBill, {
-      business_name: 'FloCafe São Paulo',
-      currency: 'BRL',
-      country: 'BR',
-      timezone: 'America/Sao_Paulo',
-    }, { language: 'pt' }),
-  });
-
-  visualArtifacts.push({
-    filename: 'web_print_bill_fa_ir',
-    title: 'Web Print Bill (Persian RTL - lang="fa-IR")',
-    html: generateBillHtml(sampleBill, {
-      business_name: 'کافه فلو تهران',
-      currency: 'IRR',
-      country: 'IR',
-      timezone: 'Asia/Tehran',
-      currency_display: 'rial',
-      number_digits: 'locale',
-      calendar: 'persian',
-    }, { language: 'fa' }),
+      business_name: 'FloCafe Алматы',
+      currency: 'KZT',
+      country: 'KZ',
+      timezone: 'Asia/Almaty',
+    }, { language: 'kk' }),
   });
 
   // Write all HTML files to evidence dir

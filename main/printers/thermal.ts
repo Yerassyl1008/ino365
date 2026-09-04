@@ -944,7 +944,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
   const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
-  const normalize = (text: string): string => lang === 'de' ? normalizeGermanThermalText(text) : text;
+  const normalize = (text: string): string => foldThermalText(lang, text);
   const configuredTaxLabel = normalize(sanitizeTemplateLabelText(String(payload?.fields?.taxRegistrationNumberLabel || getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID')));
   const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
   const hasTax = Number(bill.tax_amount) !== 0
@@ -1117,7 +1117,7 @@ function pluginLineItemColumns(layout: any, cols: number, lang: string = 'en'): 
       .map((column: any) => ({
         key: typeof column?.key === 'string' ? column.key : undefined,
         label: typeof column?.label === 'string'
-          ? (lang === 'de' ? normalizeGermanThermalText(column.label) : column.label)
+          ? foldThermalText(lang, column.label)
           : undefined,
         width: Number(column?.width),
         align: column?.align === 'right' || column?.align === 'center' ? column.align : 'left',
@@ -1162,9 +1162,7 @@ function pluginItemRows(item: any, layout: any, cols: number, prefix: string, lo
   const gap = pluginLineGap(layout);
   const values = columns.map((column) => ({
     ...column,
-    value: lang === 'de'
-      ? normalizeGermanThermalText(pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals))
-      : pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals),
+    value: foldThermalText(lang, pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals)),
   }));
   const wrappedValues = values.map((column) => {
     if (!column.wrap) return [truncateCell(column.value, Number(column.width), column.ellipsis !== false)];
@@ -1217,7 +1215,7 @@ function pluginItemTaxRate(item: any): string {
 }
 
 function pluginSummaryRow(label: string, amount: string, layout: any, cols: number, lang: string = 'en'): string {
-  const normalizedLabel = lang === 'de' ? normalizeGermanThermalText(label) : label;
+  const normalizedLabel = foldThermalText(lang, label);
   const labelWidth = Number(layout?.taxSummary?.labelWidth);
   const amountWidth = Number(layout?.taxSummary?.amountWidth);
   if (Number.isInteger(labelWidth) && Number.isInteger(amountWidth) && labelWidth > 0 && amountWidth > 0) {
@@ -1290,7 +1288,7 @@ export function itemAmountWidth(
 
 export function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en'): string[] {
   const qtyW = 4;
-  const productName = language === 'de' ? normalizeGermanThermalText(item.product_name) : item.product_name;
+  const productName = foldThermalText(language, item.product_name);
   const name = truncate(productName, nameLen).padEnd(nameLen);
   const qty = String(item.quantity).padEnd(qtyW);
   const label = name + qty;
@@ -1301,7 +1299,7 @@ export function itemRows(item: any, nameLen: number, amtLen: number, cols: numbe
 }
 
 export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en'): string[] {
-  const addonName = language === 'de' ? normalizeGermanThermalText(addon.name) : addon.name;
+  const addonName = foldThermalText(language, addon.name);
   const label = truncate('  + ' + addonName, nameLen).padEnd(nameLen);
   if (!addon.price) return [label + ' '.repeat(Math.max(0, cols - label.length))];
   const price = formatCurrency(addon.price, prefix, locale, trimDecimals);
@@ -1311,7 +1309,7 @@ export function addonRows(addon: any, nameLen: number, amtLen: number, cols: num
 }
 
 export function financialRows(label: string, value: string, cols: number, language: string = 'en'): string[] {
-  const normalizedLabel = language === 'de' ? normalizeGermanThermalText(label) : label;
+  const normalizedLabel = foldThermalText(language, label);
   const safeLabel = normalizedLabel.slice(0, Math.max(1, cols - 1));
   const inlineWidth = Math.max(1, cols - safeLabel.length - 1);
   if (value.length <= inlineWidth) {
@@ -1360,12 +1358,12 @@ export function rightAlign(text: string, width: number = 24): string {
 }
 
 export function truncate(text: string, length: number, language: string = 'en'): string {
-  const normalizedText = language === 'de' ? normalizeGermanThermalText(text) : text;
+  const normalizedText = foldThermalText(language, text);
   return normalizedText.length > length ? normalizedText.substring(0, length - 2) + '..' : normalizedText;
 }
 
 export function truncateShapedLine(text: string, length: number, arabicShaping: boolean, language: string = 'en'): string {
-  const normalizedText = language === 'de' ? normalizeGermanThermalText(text) : text;
+  const normalizedText = foldThermalText(language, text);
   return arabicShaping && hasArabicScript(normalizedText) ? truncate(normalizedText, Math.max(1, length)) : normalizedText;
 }
 
@@ -1430,12 +1428,12 @@ export function wrapText(text: string, cols: number): string[] {
 }
 
 export function pushWrapped(lines: string[], text: string, cols: number, language: string = 'en'): void {
-  const normalized = language === 'de' ? normalizeGermanThermalText(text) : text;
+  const normalized = foldThermalText(language, text);
   for (const line of wrapText(normalized, cols)) lines.push(line);
 }
 
 export function pushCenteredWrapped(lines: string[], text: string, cols: number, language: string = 'en'): void {
-  const normalized = language === 'de' ? normalizeGermanThermalText(text) : text;
+  const normalized = foldThermalText(language, text);
   for (const line of wrapText(normalized, cols)) lines.push('{CENTER}' + line + '{/CENTER}');
 }
 
@@ -1462,7 +1460,7 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
 export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMode = 'full', language?: string): Buffer {
   const width = columnsForPaperWidth(paperWidth) || 48;
   const lang = normalizePrintLanguage(language);
-  const label = (concept: PrintConceptId): string => lang === 'de' ? normalizeGermanThermalText(printLabel(lang, concept)) : printLabel(lang, concept);
+  const label = (concept: PrintConceptId): string => foldThermalText(lang, printLabel(lang, concept));
   const bar = '='.repeat(width);
   const ruler = Array.from({ length: width }, (_, i) => String((i + 1) % 10)).join('');
   const edgeProbe = 'X'.repeat(width);
@@ -1499,11 +1497,41 @@ const CURRENCY_ASCII_MAP: Record<string, string> = {
   'E£': 'EGP',
 };
 
-const GERMAN_THERMAL_ASCII_MAP: Record<string, string> = {
-  'Ä': 'AE', 'Ö': 'OE', 'Ü': 'UE', 'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss',
+/**
+ * Romanization table for Russian and Kazakh Cyrillic (BGN/PCGN-style, ASCII
+ * only). Generic ESC/POS font ROMs carry no Cyrillic glyphs and buildEscPos
+ * skips lines it cannot render, so without folding, Cyrillic item names and
+ * totals would silently vanish from the receipt. Soft and hard signs carry
+ * no sound and are dropped rather than mapped to quotes, which would
+ * collide with ESC/POS text.
+ */
+const CYRILLIC_THERMAL_ASCII_MAP: Record<string, string> = {
+  'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'Yo', 'Ж': 'Zh',
+  'З': 'Z', 'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M', 'Н': 'N', 'О': 'O',
+  'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U', 'Ф': 'F', 'Х': 'Kh', 'Ц': 'Ts',
+  'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch', 'Ъ': '', 'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu',
+  'Я': 'Ya',
+  'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo', 'ж': 'zh',
+  'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o',
+  'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'kh', 'ц': 'ts',
+  'ч': 'ch', 'ш': 'sh', 'щ': 'shch', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu',
+  'я': 'ya',
+  // Kazakh-specific letters.
+  'Ә': 'A', 'Ғ': 'G', 'Қ': 'Q', 'Ң': 'Ng', 'Ө': 'O', 'Ұ': 'U', 'Ү': 'U', 'Һ': 'H', 'І': 'I',
+  'ә': 'a', 'ғ': 'g', 'қ': 'q', 'ң': 'ng', 'ө': 'o', 'ұ': 'u', 'ү': 'u', 'һ': 'h', 'і': 'i',
 };
-export function normalizeGermanThermalText(text: string): string {
-  return text.replace(/[ÄÖÜäöüß]/g, (character) => GERMAN_THERMAL_ASCII_MAP[character]);
+
+export function normalizeCyrillicThermalText(text: string): string {
+  return text.replace(/[\u0400-\u04FF]/g, (character) => CYRILLIC_THERMAL_ASCII_MAP[character] ?? character);
+}
+
+/**
+ * Folds a receipt line to characters a generic thermal printer can render,
+ * based on the print language. A no-op for languages whose script the
+ * printer already handles.
+ */
+export function foldThermalText(language: string | undefined, text: string): string {
+  return language === 'ru' || language === 'kk' ? normalizeCyrillicThermalText(text) : text;
 }
 
 // Resolves the currency symbol into the exact text that will be printed,

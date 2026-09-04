@@ -33,8 +33,9 @@
  *      mapping; `ml-*` → `ms-*` remains correct for icons rendered AFTER
  *      their label, like sort/chevron icons.)
  *
- *   4. DirectionalToaster dynamically adapts toast placement across RTL/LTR
- *      languages (`top-left` for Persian, `top-right` for LTR languages).
+ *   4. DirectionalToaster derives toast placement from the active locale's
+ *      registered direction (`top-left` at the inline-end of an RTL
+ *      document, `top-right` for LTR languages).
  *
  *   5. The Ltr component isolates POS operational values (order numbers,
  *      phone numbers, printer IP/VID, table identifiers, JSON payloads) with
@@ -186,8 +187,10 @@ function run(): void {
   // 4. Executable DirectionalToaster position assertions across languages.
   //    #376: DirectionalToaster reads the active locale from the i18n context
   //    (useLocale), so each render is wrapped in an IntlProvider whose locale
-  //    matches the language under test.
+  //    matches the language under test. Placement and the remount key are
+  //    derived from the registry direction, never from a language check.
   const { DirectionalToaster, usePosSettingsStore, Ltr, IntlProvider, getLanguageLocale, React, ReactDOMServer } = loadComponents();
+  const { LANGUAGES, getLanguageDirection } = require('../frontend/src/lib/i18n');
 
   React.useSyncExternalStore = (_subscribe: any, getSnapshot: () => any) => getSnapshot();
 
@@ -206,46 +209,37 @@ function run(): void {
     return { position: capturedProps?.position, containerStyle: capturedProps?.containerStyle, markup, key: capturedKey };
   }
 
-  usePosSettingsStore.getState().setLanguage('fa');
-  const renderedFa = renderDirectionalToaster(getLanguageLocale('fa'));
-  assert(
-    renderedFa.position === 'top-left',
-    `DirectionalToaster must set position="top-left" (inline-end) for Persian (fa), got: ${renderedFa.position}`
-  );
-  assert(
-    renderedFa.containerStyle?.top === 'calc(var(--flo-sidebar-block-start, 0px) + 16px)',
-    `DirectionalToaster must set containerStyle.top with titlebar offset, got: ${renderedFa.containerStyle?.top}`
-  );
-  assert(
-    typeof renderedFa.markup === 'string' && renderedFa.markup.length > 0,
-    'DirectionalToaster must render static markup for Persian'
-  );
-  assert(
-    renderedFa.key === 'rtl',
-    `DirectionalToaster must key its Toaster "rtl" for Persian so a direction flip fully remounts it (regression guard for the insertBefore/NotFoundError crash when react-hot-toast's position prop changes on a live instance), got: ${renderedFa.key}`
-  );
-
-  for (const ltrLang of ['en', 'es', 'fr', 'pt'] as const) {
-    usePosSettingsStore.getState().setLanguage(ltrLang);
-    const renderedLtr = renderDirectionalToaster(getLanguageLocale(ltrLang));
+  const registeredLanguages = Object.keys(LANGUAGES) as string[];
+  for (const lang of registeredLanguages) {
+    const direction = getLanguageDirection(lang);
+    const expectedPosition = direction === 'rtl' ? 'top-left' : 'top-right';
+    usePosSettingsStore.getState().setLanguage(lang);
+    const rendered = renderDirectionalToaster(getLanguageLocale(lang));
     assert(
-      renderedLtr.position === 'top-right',
-      `DirectionalToaster must set position="top-right" for ${ltrLang}, got: ${renderedLtr.position}`
+      rendered.position === expectedPosition,
+      `DirectionalToaster must set position="${expectedPosition}" for ${direction} language ${lang}, got: ${rendered.position}`
     );
     assert(
-      renderedLtr.containerStyle?.top === 'calc(var(--flo-sidebar-block-start, 0px) + 16px)',
-      `DirectionalToaster must set containerStyle.top with titlebar offset, got: ${renderedLtr.containerStyle?.top}`
+      rendered.containerStyle?.top === 'calc(var(--flo-sidebar-block-start, 0px) + 16px)',
+      `DirectionalToaster must set containerStyle.top with titlebar offset, got: ${rendered.containerStyle?.top}`
     );
     assert(
-      typeof renderedLtr.markup === 'string' && renderedLtr.markup.length > 0,
-      `DirectionalToaster must render static markup for ${ltrLang}`
+      typeof rendered.markup === 'string' && rendered.markup.length > 0,
+      `DirectionalToaster must render static markup for ${lang}`
     );
     assert(
-      renderedLtr.key === 'ltr',
-      `DirectionalToaster must key its Toaster "ltr" for ${ltrLang} so a direction flip fully remounts it (regression guard for the insertBefore/NotFoundError crash when react-hot-toast's position prop changes on a live instance), got: ${renderedLtr.key}`
+      rendered.key === direction,
+      `DirectionalToaster must key its Toaster "${direction}" for ${lang} so a direction flip fully remounts it (regression guard for the insertBefore/NotFoundError crash when react-hot-toast's position prop changes on a live instance), got: ${rendered.key}`
     );
   }
-  console.log('  ✓ DirectionalToaster dynamically adapts toast placement across RTL/LTR languages with titlebar offset');
+  // An unregistered locale must not crash the host: it falls back to the
+  // English/LTR placement instead of rendering an undefined position.
+  const renderedUnknown = renderDirectionalToaster('xx-XX');
+  assert(
+    renderedUnknown.position === 'top-right' && renderedUnknown.key === 'ltr',
+    `DirectionalToaster must fall back to the LTR placement for unregistered locales, got: ${renderedUnknown.position}/${renderedUnknown.key}`
+  );
+  console.log(`  ✓ DirectionalToaster derives toast placement from the registered direction (${registeredLanguages.join(', ')}) with titlebar offset`);
   console.log('  ✓ DirectionalToaster keys its Toaster by direction to force remount instead of a live position swap (insertBefore/NotFoundError regression guard)');
 
   // 5. Executable Ltr component rendering for POS/operational values.
@@ -299,11 +293,14 @@ function run(): void {
   console.log('  ✓ Ltr component isolates POS operational values (order #, phone, IP, VID, table, JSON)');
 
   // 6. Shared language-direction metadata (single source of truth).
-  const { getLanguageDirection } = require('../frontend/src/lib/i18n');
-  assert(getLanguageDirection('fa') === 'rtl', 'Persian (fa) must resolve to rtl');
-  for (const ltrLang of ['en', 'es', 'fr', 'pt'] as const) {
-    assert(getLanguageDirection(ltrLang) === 'ltr', `${ltrLang} must resolve to ltr`);
+  for (const lang of registeredLanguages) {
+    const direction = getLanguageDirection(lang);
+    assert(
+      direction === 'ltr' || direction === 'rtl',
+      `${lang} must resolve to a known text direction, got: ${direction}`
+    );
   }
+  assert(getLanguageDirection('xx') === 'ltr', 'unregistered languages must default to ltr');
   console.log('  ✓ getLanguageDirection resolves direction from shared language metadata');
 
   console.log('\n✅ All RTL/LTR Dashboard, POS, and common flow checks passed.');

@@ -33,7 +33,7 @@ const MESSAGES_DIR = path.join(ROOT, 'frontend/src/lib/i18n/messages');
 const OUT_FILE = path.join(ROOT, 'main/print/print-labels.generated.ts');
 
 /** Committed languages, in stable generation order (keep in sync with languages.ts). */
-const LANGUAGES = ['en', 'fa', 'es', 'fr', 'pt', 'tr', 'fil', 'de'];
+const LANGUAGES = ['en', 'ru', 'kk'];
 
 
 /**

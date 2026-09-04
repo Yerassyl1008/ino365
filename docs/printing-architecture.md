@@ -228,7 +228,7 @@ Three decoupled domains (see also [i18n.md](i18n.md)):
 - **Kitchen ticket policy** (`kot_language_policy`): single-primary, resolved
   independently of the receipt. The backend document path and browser HTML KOT
   path honor a fixed language — for example, an English kitchen keeps English
-  tickets in a Persian storefront (asserted in the backend policy section of
+  tickets in a non-English storefront (asserted in the backend policy section of
   [`tests/print-parity.test.ts`](../tests/print-parity.test.ts) and the browser cold-start regression
   [`tests/kot-locale-cold-start.test.ts`](../tests/kot-locale-cold-start.test.ts)). The frontend WebUSB
   [`frontend/src/lib/printer/kot-encoder.ts`](../frontend/src/lib/printer/kot-encoder.ts) is a legacy exception: its raw `buildKotBytes` path accepts the resolved

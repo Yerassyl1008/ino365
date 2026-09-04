@@ -64,13 +64,13 @@ async function run(): Promise<void> {
   console.log('🧪 KOT browser-print cold-start locale regression (fixed KOT lang ≠ UI lang)');
   const { loader, posSettings, policy, usePrinter, printerServiceModule } = loadFrontendModules();
 
-  // Cold start: prime ONLY the UI locale (en); fa stays out of the cache.
+  // Cold start: prime ONLY the UI locale (en); ru stays out of the cache.
   await loader.loadLocaleMessages('en');
-  check('fa messages are not cached at cold start', !loader.getCachedMessages('fa'));
+  check('ru messages are not cached at cold start', !loader.getCachedMessages('ru'));
 
   const settings = posSettings.usePosSettingsStore.getState();
-  // Fixed KOT language (fa) while the active UI language is en.
-  settings.setKotLanguagePolicy({ primary: { mode: 'fixed', language: 'fa' }, additional: [] });
+  // Fixed KOT language (ru) while the active UI language is en.
+  settings.setKotLanguagePolicy({ primary: { mode: 'fixed', language: 'ru' }, additional: [] });
   settings.setLanguage('en');
   settings.setKotPrintingEnabled(true);
 
@@ -109,9 +109,9 @@ async function run(): Promise<void> {
 
     check('KOT browser print produced HTML', captured.length === 1);
     const html = captured[0] ?? '';
-    // The fixed fa policy's banner label — proof the fa bundle was loaded
+    // The fixed ru policy's banner label — proof the ru bundle was loaded
     // before generation instead of falling back to English.
-    check('KOT labels render in the fixed fa language on cold start', html.includes('برگ سفارش آشپزخانه'), html.slice(0, 200));
+    check('KOT labels render in the fixed ru language on cold start', html.includes('ЗАКАЗ ДЛЯ КУХНИ'), html.slice(0, 200));
     check('KOT labels do NOT fall back to English', !html.includes('KITCHEN ORDER TICKET'));
     check('order number still rendered', html.includes('ORD-KOT-COLD-001'));
   } finally {
@@ -127,11 +127,11 @@ async function run(): Promise<void> {
   // failure must be surfaced via the returned print warnings (Greptile P1).
   // ------------------------------------------------------------------
   {
-    settings.setKotLanguagePolicy({ primary: { mode: 'fixed', language: 'fa' }, additional: [] });
+    settings.setKotLanguagePolicy({ primary: { mode: 'fixed', language: 'ru' }, additional: [] });
     const loaderModule = require('../frontend/src/lib/i18n/loader');
     const originalLoad = loaderModule.loadLocaleMessages;
     loaderModule.loadLocaleMessages = async (lang: string) => {
-      if (lang === 'fa') throw new Error('simulated offline bundle fetch failure');
+      if (lang === 'ru') throw new Error('simulated offline bundle fetch failure');
       return originalLoad(lang);
     };
 
@@ -161,11 +161,11 @@ async function run(): Promise<void> {
 
       check('KOT print proceeds despite failed locale load', failureCaptured.length === 1);
       check('failed KOT locale is surfaced as a print warning',
-        warnings.some((w) => w.field === 'kot language' && w.text === 'fa' && /could not be loaded/.test(w.message)),
+        warnings.some((w) => w.field === 'kot language' && w.text === 'ru' && /could not be loaded/.test(w.message)),
         JSON.stringify(warnings),
       );
-      // Note: scenario 1 already warmed the fa cache, so the ticket may
-      // render cached Persian labels here; what matters is that printing
+      // Note: scenario 1 already warmed the ru cache, so the ticket may
+      // render cached Russian labels here; what matters is that printing
       // proceeds and the failure is surfaced rather than silent.
       check('ticket still renders content', (failureCaptured[0] ?? '').includes('ORD-KOT-COLD-002'));
     } finally {

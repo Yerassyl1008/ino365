@@ -24,6 +24,7 @@ const {
   getLocalizedCountryName,
   sortCountriesByLocalizedName,
 } = require('../frontend/src/lib/countries');
+const { LANGUAGES, getLanguageLocale } = require('../frontend/src/lib/i18n/languages');
 
 moduleApi._resolveFilename = originalResolveFilename;
 
@@ -35,40 +36,62 @@ function codes(countries) {
   return countries.map((country) => country.code);
 }
 
+/**
+ * Countries stay supported independently of the UI language set, so the
+ * localization expectations below cover country profiles that no longer have a
+ * matching UI language (Germany, Brazil, France, Iran, Argentina). Values
+ * mirror `Intl.DisplayNames` output for each registered UI locale.
+ */
+const EXPECTED_COUNTRY_NAMES = {
+  en: { DE: 'Germany', US: 'United States', JP: 'Japan', BR: 'Brazil', FR: 'France', IR: 'Iran', AR: 'Argentina' },
+  ru: { DE: 'Германия', JP: 'Япония', BR: 'Бразилия', FR: 'Франция', IR: 'Иран', AR: 'Аргентина' },
+  kk: { DE: 'Германия', US: 'Америка Құрама Штаттары', JP: 'Жапония', BR: 'Бразилия', FR: 'Франция', IR: 'Иран', AR: 'Аргентина' },
+};
+
+const PROBE_COUNTRIES = ['DE', 'US', 'JP', 'BR', 'FR', 'IR', 'AR', 'IN'];
+
 try {
-  assert.equal(getLocalizedCountryName('DE', 'en'), 'Germany');
-  assert.equal(getLocalizedCountryName('US', 'en'), 'United States');
-  assert.equal(getLocalizedCountryName('JP', 'en'), 'Japan');
+  // Every registered UI language must resolve localized country names, so
+  // adding or removing a language cannot silently drop this coverage.
+  for (const language of Object.keys(LANGUAGES)) {
+    const locale = getLanguageLocale(language);
 
-  assert.equal(getLocalizedCountryName('DE', 'es'), 'Alemania');
-  assert.equal(getLocalizedCountryName('US', 'es'), 'Estados Unidos');
-  assert.equal(getLocalizedCountryName('JP', 'es'), 'Japón');
+    for (const code of PROBE_COUNTRIES) {
+      const localized = getLocalizedCountryName(code, locale);
+      assert.ok(localized, `${code} resolves a display name in ${locale}`);
+      assert.notEqual(localized, code, `${code} does not fall back to the raw ISO code in ${locale}`);
+      if (language !== 'en') {
+        assert.notEqual(
+          localized,
+          getLocalizedCountryName(code, 'en'),
+          `${code} in ${locale} is translated rather than the English name`,
+        );
+      }
+    }
 
-  assert.equal(getLocalizedCountryName('DE', 'pt-BR'), 'Alemanha');
-  assert.equal(getLocalizedCountryName('US', 'pt-BR'), 'Estados Unidos');
-  assert.equal(getLocalizedCountryName('JP', 'pt-BR'), 'Japão');
-
-  assert.equal(getLocalizedCountryName('DE', 'fa-IR'), 'آلمان');
-  assert.equal(getLocalizedCountryName('US', 'fa-IR'), 'ایالات متحده');
+    for (const [code, expected] of Object.entries(EXPECTED_COUNTRY_NAMES[language] || {})) {
+      assert.equal(getLocalizedCountryName(code, locale), expected, `${code} in ${locale} is "${expected}"`);
+    }
+  }
 
   const germany = getCountryByCode('DE');
   assert(germany, 'Germany country profile exists');
-  assert(countryMatchesQuery(germany, 'Alemania', 'es'), 'search matches a localized Spanish name');
-  assert(countryMatchesQuery(germany, 'Germany', 'es'), 'search matches the English fallback name');
-  assert(countryMatchesQuery(germany, 'DE', 'es'), 'search matches the ISO country code');
-  assert(countryMatchesQuery(germany, 'EUR', 'es'), 'search matches the currency');
-  assert(countryMatchesQuery(germany, 'de-DE', 'es'), 'search matches the country locale');
-  assert(!countryMatchesQuery(germany, 'Brasil', 'es'), 'search excludes unrelated localized names');
+  assert(countryMatchesQuery(germany, 'Германия', 'ru-RU'), 'search matches a localized Russian name');
+  assert(countryMatchesQuery(germany, 'Germany', 'ru-RU'), 'search matches the English fallback name');
+  assert(countryMatchesQuery(germany, 'DE', 'ru-RU'), 'search matches the ISO country code');
+  assert(countryMatchesQuery(germany, 'EUR', 'ru-RU'), 'search matches the currency');
+  assert(countryMatchesQuery(germany, 'de-DE', 'ru-RU'), 'search matches the country locale');
+  assert(!countryMatchesQuery(germany, 'Бразилия', 'ru-RU'), 'search excludes unrelated localized names');
 
   assert.deepEqual(
-    codes(sortCountriesByLocalizedName(selectedCountries(), 'es')),
+    codes(sortCountriesByLocalizedName(selectedCountries(), 'ru-RU')),
     ['IN', 'AR', 'DE', 'US', 'JP'],
-    'Spanish sorting keeps pinned countries first and then sorts localized names',
+    'Russian sorting keeps pinned countries first and then sorts localized names',
   );
   assert.deepEqual(
-    codes(sortCountriesByLocalizedName(selectedCountries(), 'pt-BR')),
-    ['IN', 'AR', 'DE', 'US', 'JP'],
-    'Portuguese sorting keeps pinned countries first and then sorts localized names',
+    codes(sortCountriesByLocalizedName(selectedCountries(), 'kk-KZ')),
+    ['IN', 'AR', 'US', 'DE', 'JP'],
+    'Kazakh sorting keeps pinned countries first and then sorts by its own collation',
   );
 
   console.log('✅ Issue #392 country localization checks passed');

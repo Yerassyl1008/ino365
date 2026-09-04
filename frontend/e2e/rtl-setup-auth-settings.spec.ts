@@ -71,11 +71,11 @@ test('login page is LTR in English and RTL in Persian with LTR email and end-ali
 
   // 2. Persian (RTL)
   await page.addInitScript(() => {
-    localStorage.setItem('pos-settings', JSON.stringify({ state: { language: 'fa' }, version: 3 }));
+    localStorage.setItem('pos-settings', JSON.stringify({ state: { language: 'ru' }, version: 3 }));
   });
   await page.goto(`${BASE}/auth/login`);
 
-  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
 
   // The email field is naturally LTR and must stay an LTR island inside RTL.
   await expect(page.locator('#email')).toHaveAttribute('dir', 'ltr');
@@ -88,7 +88,7 @@ test('login page is LTR in English and RTL in Persian with LTR email and end-ali
   const toggleBox = await toggle.boundingBox();
   expect(inputBox).not.toBeNull();
   expect(toggleBox).not.toBeNull();
-  expect(toggleBox!.x + toggleBox!.width).toBeLessThan(inputBox!.x + inputBox!.width / 2);
+  expect(toggleBox!.x).toBeGreaterThan(inputBox!.x + inputBox!.width / 2);
 
   await captureScreenshot(page, 'auth-login-rtl-fa.png');
 });
@@ -110,11 +110,11 @@ test('recover password page is LTR in English and RTL in Persian with .rtl-flip 
 
   // 2. Persian (RTL)
   await page.addInitScript(() => {
-    localStorage.setItem('pos-settings', JSON.stringify({ state: { language: 'fa' }, version: 3 }));
+    localStorage.setItem('pos-settings', JSON.stringify({ state: { language: 'ru' }, version: 3 }));
   });
   await page.goto(`${BASE}/auth/recover`);
 
-  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
 
   // Recover email input must have dir="ltr"
   await expect(page.locator('#recover-email')).toHaveAttribute('dir', 'ltr');
@@ -141,11 +141,13 @@ test('setup wizard renders with logical navigation, .rtl-flip directional arrows
 
   // Verify every registered selectable language is available regardless of
   // browser locale; browser preference only controls ordering/default choice.
-  const languageButtons = page.locator('button', { hasText: /English|Inglés|Inglês/ });
+  const languageButtons = page.locator('button', { hasText: /English|Русский|Қазақша/ });
   await expect(languageButtons.first()).toBeVisible();
   const allButtonsText = await page.locator('button').allInnerTexts();
-  const hasPersianOption = allButtonsText.some((text) => text.includes('فارسی') || text.includes('FA'));
-  expect(hasPersianOption, 'Persian (fa) must be available as a selectable UI language').toBeTruthy();
+  const hasRussianOption = allButtonsText.some((text) => text.includes('Русский') || text.includes('RU'));
+  const hasKazakhOption = allButtonsText.some((text) => text.includes('Қазақша') || text.includes('KK'));
+  expect(hasRussianOption, 'Russian (ru) must be available as a selectable UI language').toBeTruthy();
+  expect(hasKazakhOption, 'Kazakh (kk) must be available as a selectable UI language').toBeTruthy();
 
   // Forward arrow has rtl-flip class
   const continueArrow = page.locator('button svg.rtl-flip').first();
@@ -155,21 +157,21 @@ test('setup wizard renders with logical navigation, .rtl-flip directional arrows
 
   // 2. Step 1 in Persian (RTL)
   await page.addInitScript(() => {
-    localStorage.setItem('pos-settings', JSON.stringify({ state: { language: 'fa' }, version: 3 }));
+    localStorage.setItem('pos-settings', JSON.stringify({ state: { language: 'ru' }, version: 3 }));
   });
   await page.goto(`${BASE}/setup`);
-  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   await captureScreenshot(page, 'setup-step1-rtl-fa.png');
 
   // Advance to Step 2 (Master PIN)
-  await page.locator('button', { hasText: /ادامه|Continue/ }).first().click();
+  await page.locator('button', { hasText: /Продолжить|Continue/ }).first().click();
   await expect(page.locator('#master-pin')).toBeVisible();
   await captureScreenshot(page, 'setup-step2-master-pin-rtl-fa.png');
 
   // Fill master pin to advance to Step 3 (Admin Account)
   await page.locator('#master-pin').fill('1234');
   await page.locator('#master-pin-confirm').fill('1234');
-  await page.locator('button', { hasText: /ادامه|Continue/ }).first().click();
+  await page.locator('button', { hasText: /Продолжить|Continue/ }).first().click();
 
   // Step 3 (Owner Account)
   await expect(page.locator('#email')).toBeVisible();
@@ -179,10 +181,10 @@ test('setup wizard renders with logical navigation, .rtl-flip directional arrows
   await captureScreenshot(page, 'setup-step3-owner-account-rtl-fa.png');
 });
 
-test.describe('setup with a Persian browser language', () => {
-  test.use({ locale: 'fa-IR' });
+test.describe('setup with a Russian browser language', () => {
+  test.use({ locale: 'ru-RU' });
 
-  test('setup wizard offers Persian as a language option when the browser language is fa', async ({ page }) => {
+  test('setup wizard offers Russian as a language option when the browser language is ru', async ({ page }) => {
     await page.route('**/api/auth/setup/status', (route) => {
       route.fulfill({
         status: 200,
@@ -193,43 +195,39 @@ test.describe('setup with a Persian browser language', () => {
 
     await page.goto(`${BASE}/setup`);
 
-    // A fa browser locale surfaces the Persian option, labeled in Persian.
-    const persianOption = page.locator('button', { hasText: 'فارسی' }).first();
-    await expect(persianOption).toBeVisible();
-    await expect(persianOption).toContainText('FA');
+    const russianOption = page.locator('button', { hasText: 'Русский' }).first();
+    await expect(russianOption).toBeVisible();
+    await expect(russianOption).toContainText('RU');
 
-    // Persian is preselected (browser locale fa) and switching languages
-    // moves the selected state. Options re-render with localized labels, so
-    // target them by the constant language-code subtitle (EN/FA).
     const englishOption = page.locator('button').filter({ has: page.getByText('EN', { exact: true }) });
     await expect(englishOption).toBeVisible();
     await englishOption.click();
     await expect(englishOption).toHaveClass(/border-primary/);
-    const persianOptionAfterSwitch = page.locator('button').filter({ has: page.getByText('FA', { exact: true }) });
-    await expect(persianOptionAfterSwitch).not.toHaveClass(/border-primary/);
-    await persianOptionAfterSwitch.click();
-    await expect(persianOptionAfterSwitch).toHaveClass(/border-primary/);
+    const russianOptionAfterSwitch = page.locator('button').filter({ has: page.getByText('RU', { exact: true }) });
+    await expect(russianOptionAfterSwitch).not.toHaveClass(/border-primary/);
+    await russianOptionAfterSwitch.click();
+    await expect(russianOptionAfterSwitch).toHaveClass(/border-primary/);
 
-    await captureScreenshot(page, 'setup-step1-fa-locale-fa-option.png');
+    await captureScreenshot(page, 'setup-step1-ru-locale-ru-option.png');
   });
 });
 
 test('settings renders RTL without horizontal overflow, mirrors toggles and tabs, and isolates LTR data', async ({ page }) => {
   await loginAsManager(page);
-  await setLanguage(page, 'fa');
+  await setLanguage(page, 'ru');
 
   try {
     // 1. Store tab in Persian (RTL)
     await page.goto(`${BASE}/settings?tab=store`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
     await expect(page.locator('nav')).toBeVisible();
 
     // The Settings left nav mirrors to the inline-end in RTL: radix Tabs must
     // follow the document direction instead of forcing dir="ltr" (Refs #241).
-    await expect(page.locator('[data-slot="tabs"]')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('[data-slot="tabs"]')).toHaveAttribute('dir', 'ltr');
     const settingsNavBox = await page.locator('nav').boundingBox();
     expect(settingsNavBox, 'settings nav must have a bounding box').not.toBeNull();
-    expect(settingsNavBox!.x, 'settings nav must sit on the right side in RTL').toBeGreaterThan(
+    expect(settingsNavBox!.x, 'settings nav must sit on the left side in LTR').toBeLessThan(
       (page.viewportSize()?.width ?? 0) / 2
     );
 
@@ -239,9 +237,8 @@ test('settings renders RTL without horizontal overflow, mirrors toggles and tabs
     const options = await languageSelect.locator('option').all();
     const optionValues = await Promise.all(options.map((opt) => opt.getAttribute('value')));
     expect(optionValues).toContain('en');
-    expect(optionValues).toContain('es');
-    expect(optionValues).toContain('pt');
-    expect(optionValues).toContain('fa');
+    expect(optionValues).toContain('ru');
+    expect(optionValues).toContain('kk');
 
     // Check document does not overflow horizontally in RTL
     const storeOverflow = await page.evaluate(() => ({
@@ -266,7 +263,7 @@ test('settings renders RTL without horizontal overflow, mirrors toggles and tabs
 
     // 2. Account tab in Persian (RTL)
     await page.goto(`${BASE}/settings?tab=account`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
 
     // Account email (manager@flo.local) is in an LTR island
     const email = page.locator('text=manager@flo.local').first();
@@ -293,7 +290,7 @@ test('settings renders RTL without horizontal overflow, mirrors toggles and tabs
 
     // 3. Taxes tab in Persian (RTL)
     await page.goto(`${BASE}/settings?tab=tax`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
     await captureScreenshot(page, 'settings-taxes-rtl-fa.png');
 
     // 4. Health Check dialog in Persian (RTL)

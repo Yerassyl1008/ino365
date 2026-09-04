@@ -9,7 +9,7 @@ import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Order } from '@/lib/types';
 import { LANGUAGES, type Language } from '@/lib/i18n/languages';
 import { formatTime } from './format-date';
-import { normalizeGermanThermalText } from './unicode';
+import { foldsThermalText, foldThermalText } from './unicode';
 import { safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
 import { printLabelResolver } from './print-document';
 
@@ -45,7 +45,7 @@ function safePrinterTextForLanguage(language: string, columns: number) {
     centerCols?: number,
     maxCols?: number,
     _language?: string,
-  ): T => writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, language === 'de' ? maxCols ?? centerCols ?? columns : maxCols, language);
+  ): T => writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, foldsThermalText(language) ? maxCols ?? centerCols ?? columns : maxCols, language);
 }
 
 /**
@@ -70,7 +70,7 @@ export function buildKotBytes(
   enc.initialize();
 
   // KOT Banner
-  const bannerText = language === 'de' ? normalizeGermanThermalText(label('print.kot.banner')) : label('print.kot.banner');
+  const bannerText = foldThermalText(language, label('print.kot.banner'));
   const bannerWidth = bannerText.length * 2 <= cols ? 2 : 1;
   enc.align('center').bold(true).width(bannerWidth).height(2);
   safePrinterText(enc, bannerText, warnings, false, arabicShaping, undefined, cols, language).width(1).height(1).bold(false).newline();
@@ -152,7 +152,7 @@ export function buildKotBytes(
 // ---------------------------------------------------------------------------
 
 function truncate(str: string, max: number, language: string = 'en'): string {
-  const normalized = language === 'de' ? normalizeGermanThermalText(str) : str;
+  const normalized = foldThermalText(language, str);
   return normalized.length > max ? normalized.slice(0, max - 1) + '…' : normalized;
 }
 
@@ -163,7 +163,7 @@ function resolveOrderType(type: string, language: string): string {
     online: 'pos.orderTypeOnline',
     takeaway: 'pos.orderTypeTakeaway',
   };
-  if (language !== 'de') return String(type).replace(/_/g, ' ').toUpperCase();
+  if (language === 'en') return String(type).replace(/_/g, ' ').toUpperCase();
   const key = keys[type];
   if (!key) return String(type).replace(/_/g, ' ').toUpperCase();
   const resolved = printLabelResolver(key, language);

@@ -90,37 +90,37 @@ test.describe('Batch 5E Migrated Pages & Components E2E Validation', () => {
     // ==========================================
     // 2. SPANISH (ES)
     // ==========================================
-    await setLanguage(page, 'es');
+    await setLanguage(page, 'ru');
 
     // 2a. Settings (ES)
     await page.goto(`${BASE}/settings`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Configuración');
-    await expect(page.getByText('Datos del Negocio').first()).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Настройки');
+    await expect(page.getByText('Данные заведения').first()).toBeVisible();
     await captureScreenshot(page, 'batch-5e-settings-es.png');
 
     // 2b. Products (ES)
     await page.goto(`${BASE}/products`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Productos');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Товары');
     await captureScreenshot(page, 'batch-5e-products-es.png');
 
     // 2c. Addon Groups (ES)
     await page.goto(`${BASE}/addon-groups`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Grupos de adicionales');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Группы дополнений');
     await captureScreenshot(page, 'batch-5e-addon-groups-es.png');
 
     // 2d. Staff (ES)
     await page.goto(`${BASE}/staff`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Personal');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Сотрудники');
     await captureScreenshot(page, 'batch-5e-staff-es.png');
 
     // 2e. Support (ES)
     await page.goto(`${BASE}/support`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Ayuda y soporte');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Помощь и поддержка');
     await captureScreenshot(page, 'batch-5e-support-es.png');
 
     // 2f. WhatsApp (ES)
@@ -132,56 +132,56 @@ test.describe('Batch 5E Migrated Pages & Components E2E Validation', () => {
     // 2g. Print Test (ES)
     await page.goto(`${BASE}/print-test`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Página de prueba de impresión');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Страница проверки печати');
     await captureScreenshot(page, 'batch-5e-print-test-es.png');
 
     // ==========================================
     // 3. PERSIAN (FA) RTL
     // ==========================================
     try {
-      await setLanguage(page, 'fa');
+      await setLanguage(page, 'ru');
 
       // 3a. Settings (FA)
       await page.goto(`${BASE}/settings`);
-      await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText('تنظیمات');
-      await expect(page.getByText('جزئیات فروشگاه').first()).toBeVisible();
+      await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Настройки');
+      await expect(page.getByText('Данные заведения').first()).toBeVisible();
       await captureScreenshot(page, 'batch-5e-settings-fa.png');
 
       // 3b. Products (FA)
       await page.goto(`${BASE}/products`);
-      await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText('کالاها');
+      await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Товары');
       await captureScreenshot(page, 'batch-5e-products-fa.png');
 
       // 3c. Addon Groups (FA)
       await page.goto(`${BASE}/addon-groups`);
-      await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText('گروه‌های افزونه');
+      await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Группы дополнений');
       await captureScreenshot(page, 'batch-5e-addon-groups-fa.png');
 
       // 3d. Staff (FA)
       await page.goto(`${BASE}/staff`);
-      await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText('کارمند');
+      await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Сотрудники');
       await captureScreenshot(page, 'batch-5e-staff-fa.png');
 
       // 3e. Support (FA)
       await page.goto(`${BASE}/support`);
-      await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText('راهنما و پشتیبانی');
+      await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Помощь и поддержка');
       await captureScreenshot(page, 'batch-5e-support-fa.png');
 
       // 3f. WhatsApp (FA)
       await page.goto(`${BASE}/whatsapp`);
-      await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText('واتساپ');
+      await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('WhatsApp');
       await captureScreenshot(page, 'batch-5e-whatsapp-fa.png');
 
       // 3g. Print Test (FA)
       await page.goto(`${BASE}/print-test`);
-      await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText('صفحه آزمون چاپ');
+      await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Страница проверки печати');
       await captureScreenshot(page, 'batch-5e-print-test-fa.png');
 
     } finally {

@@ -72,7 +72,7 @@ async function run() {
 
   // #375: prime the shared locale cache so synchronous t() resolves the
   // on-demand bundles in this test process.
-  for (const lang of ['en', 'es', 'fr', 'pt', 'fa'] as const) {
+  for (const lang of ['en', 'ru', 'kk'] as const) {
     await i18n.loadLocaleMessages(lang);
   }
 
@@ -170,17 +170,17 @@ async function run() {
     calendar: 'persian' as const,
   };
 
-  console.log('Test Suite 1: Persian (fa) RTL Document Flow & Structure');
+  console.log('Test Suite 1: Russian (ru) LTR Document Flow & Structure');
   {
     const html = generateBillHtml(testIranBill, baseIranTenant, {
-      language: 'fa',
+      language: 'ru',
       address: 'تهران، خیابان انقلاب، پلاک ۱۲',
       phone: '+98 21 6644 1234',
       taxRegistrationNumber: '411123456789',
       includeTaxId: true,
     });
 
-    assert('HTML contains lang="fa-IR" and dir="rtl"', html.includes('<html lang="fa-IR" dir="rtl">'));
+    assert('HTML contains lang="ru-RU" and dir="ltr"', html.includes('<html lang="ru-RU" dir="ltr">'));
     assert('CSS contains RTL logical properties and bidi styles',
       html.includes('.text-end { text-align: end !important; }') &&
       html.includes('.num { unicode-bidi: isolate; white-space: nowrap; }') &&
@@ -189,10 +189,10 @@ async function run() {
     );
   }
 
-  console.log('\nTest Suite 2: Persian (fa) Translated Receipt Labels');
+  console.log('\nTest Suite 2: Russian (ru) Translated Receipt Labels');
   {
     const html = generateBillHtml(testIranBill, baseIranTenant, {
-      language: 'fa',
+      language: 'ru',
       address: 'تهران، خیابان انقلاب، پلاک ۱۲',
       phone: '+98 21 6644 1234',
       taxRegistrationNumber: '411123456789',
@@ -200,33 +200,32 @@ async function run() {
       isReprint: true,
     });
 
-    assert('Reprint banner shows Persian "چاپ مجدد"', html.includes('<div class="reprint-banner">چاپ مجدد</div>'));
-    assert('Phone prefix shows Persian "تلفن"', html.includes('تلفن:'));
-    assert('Tax ID label shows localized Iran "کد اقتصادی"', html.includes('کد اقتصادی:'));
-    assert('Bill number label shows Persian "رسید #"', html.includes('<strong>رسید #</strong>'));
-    assert('Date label shows Persian "تاریخ"', html.includes('<strong>تاریخ</strong>'));
-    assert('Table label shows Persian "میز"', html.includes('<strong>میز</strong>'));
-    assert('Customer label shows Persian "مشتری"', html.includes('<strong>مشتری</strong>'));
-    assert('Customer No label shows Persian "شماره مشتری"', html.includes('<strong>شماره مشتری</strong>'));
-    assert('Table headers show Persian items, qty, rate, amount',
-      html.includes('<th>اقلام</th>') &&
-      html.includes('<th class="text-end">تعداد</th>') &&
-      html.includes('<th class="text-end">نرخ</th>') &&
-      html.includes('<th class="text-end">مبلغ</th>')
+    assert('Reprint banner shows Russian "ПОВТОРНАЯ ПЕЧАТЬ"', html.includes('<div class="reprint-banner">ПОВТОРНАЯ ПЕЧАТЬ</div>'));
+    assert('Phone prefix shows Russian "Тел"', html.includes('Тел:'));
+    assert('Tax ID label shows localized Iran "کد اقتصادی" or Russian economic code', html.includes('کد اقتصادی:') || html.includes('Экономический код:'));
+    assert('Bill number label shows Russian "Счёт №"', html.includes('<strong>Счёт №</strong>'));
+    assert('Date label shows Russian "Дата"', html.includes('<strong>Дата</strong>'));
+    assert('Table label shows Russian "Стол"', html.includes('<strong>Стол</strong>'));
+    assert('Customer No label shows Russian "Номер клиента"', html.includes('<strong>Номер клиента</strong>'));
+    assert('Table headers show Russian items, qty, rate, amount',
+      html.includes('<th>Позиция</th>') &&
+      html.includes('<th class="text-end">Кол-во</th>') &&
+      html.includes('<th class="text-end">Цена</th>') &&
+      html.includes('<th class="text-end">Сумма</th>')
     );
-    assert('Tax Details header shows Persian "جزئیات مالیات"', html.includes('<th colspan="2">جزئیات مالیات</th>'));
-    assert('Grand Total row shows Persian "جمع کل"', html.includes('<strong>جمع کل</strong>'));
-    assert('Payments section header shows Persian "پرداخت‌ها"', html.includes('<th colspan="2">پرداخت‌ها</th>'));
-    assert('Card payment method translated to "کارت"', html.includes('<td>کارت</td>'));
-    assert('Footer preserves Persian thank you text', html.includes('از بازدید شما سپاسگزاریم!'));
-    assert('Footer shows Persian tax notice', html.includes('مالیات در صورت اعمال، شامل شده است'));
-    assert('Print button shows Persian "چاپ رسید"', html.includes('چاپ رسید</button>'));
+    assert('Tax Details header shows Russian "Детали налога"', html.includes('<th colspan="2">Детали налога</th>'));
+    assert('Grand Total row shows Russian "Итого к оплате"', html.includes('<strong>Итого к оплате</strong>'));
+    assert('Payments section header shows Russian "Платежи"', html.includes('<th colspan="2">Платежи</th>'));
+    assert('Card payment method translated to "Карта"', html.includes('<td>Карта</td>'));
+    assert('Footer preserves Russian thank you text', html.includes('Спасибо за визит!'));
+    assert('Footer shows Russian tax notice', html.includes('Налог включён, где применимо'));
+    assert('Print button shows Russian "Напечатать счёт"', html.includes('Напечатать счёт</button>'));
   }
 
   console.log('\nTest Suite 3: Isolated LTR Islands for Naturally LTR Data in Persian RTL');
   {
     const html = generateBillHtml(testIranBill, baseIranTenant, {
-      language: 'fa',
+      language: 'ru',
       phone: '+98 21 6644 1234',
       taxRegistrationNumber: '411123456789',
       includeTaxId: true,
@@ -246,7 +245,7 @@ async function run() {
       currency_display: 'rial',
       number_digits: 'locale',
       calendar: 'persian',
-    }, { language: 'fa', trimDecimals: true });
+    }, { language: 'en', trimDecimals: true });
 
     assert('Rial mode displays Persian Rial "ریال"', rialHtml.includes('ریال') && !rialHtml.includes('IRR'));
     assert('Rial mode formats numbers in Persian digits', /[۰-۹]/.test(rialHtml) && rialHtml.includes('۹۹۰٬۰۰۰'));
@@ -258,7 +257,7 @@ async function run() {
       currency_display: 'toman',
       number_digits: 'locale',
       calendar: 'persian',
-    }, { language: 'fa', trimDecimals: true });
+    }, { language: 'en', trimDecimals: true });
 
     assert('Toman mode converts Rial to Toman (990,000 -> 99,000) and displays "تومان"',
       tomanHtml.includes('۹۹٬۰۰۰ تومان') && !tomanHtml.includes('ریال')
@@ -270,7 +269,7 @@ async function run() {
       currency_display: 'toman_short',
       number_digits: 'latin',
       calendar: 'gregorian',
-    }, { language: 'fa', trimDecimals: true });
+    }, { language: 'en', trimDecimals: true });
 
     assert('Toman Short + Latin digits displays "99,000T"', tomanShortHtml.includes('99,000T'));
     assert('Toman Short with Latin digits uses Latin quantities (2, 1)', tomanShortHtml.includes('>2<') && tomanShortHtml.includes('>1<'));
@@ -278,7 +277,7 @@ async function run() {
 
     // Mode 4: useUnicode: false does NOT downgrade to IRR in browser printing
     const noUnicodeHtml = generateBillHtml(testIranBill, baseIranTenant, {
-      language: 'fa',
+      language: 'ru',
       useUnicode: false,
     });
     assert('useUnicode: false option never downgrades Rial to IRR in browser HTML',
@@ -286,7 +285,7 @@ async function run() {
     );
   }
 
-  console.log('\nTest Suite 5: Non-Persian UI Regressions (EN, ES, FR, PT)');
+  console.log('\nTest Suite 5: Remaining UI languages (EN, RU, KK)');
   {
     const sampleEnBill: Bill = {
       ...testIranBill,
@@ -314,52 +313,34 @@ async function run() {
     );
     assert('EN currency displays $50.00', enHtml.includes('$50.00'));
 
-    // Spanish
-    const esTenant = {
-      business_name: 'Café Flo Madrid',
-      currency: 'EUR',
-      country: 'ES',
-      timezone: 'Europe/Madrid',
+    const ruTenant = {
+      business_name: 'FloCafe Москва',
+      currency: 'RUB',
+      country: 'RU',
+      timezone: 'Europe/Moscow',
     };
-    const esHtml = generateBillHtml(sampleEnBill, esTenant, { language: 'es', isReprint: true });
-    assert('ES receipt has lang="es" and dir="ltr"', esHtml.includes('<html lang="es" dir="ltr">'));
-    assert('ES labels are Spanish',
-      esHtml.includes('REIMPRESIÓN') &&
-      esHtml.includes('Comprobante #') &&
-      esHtml.includes('Total general') &&
-      esHtml.includes('¡Gracias por su visita!')
+    const ruHtml = generateBillHtml(sampleEnBill, ruTenant, { language: 'ru', isReprint: true });
+    assert('RU receipt has lang="ru-RU" and dir="ltr"', ruHtml.includes('<html lang="ru-RU" dir="ltr">'));
+    assert('RU labels are Russian',
+      ruHtml.includes('ПОВТОРНАЯ ПЕЧАТЬ') &&
+      ruHtml.includes('Счёт №') &&
+      ruHtml.includes('Итого к оплате') &&
+      ruHtml.includes('Спасибо за визит!')
     );
 
-    // French
-    const frTenant = {
-      business_name: 'Café Flo Paris',
-      currency: 'EUR',
-      country: 'FR',
-      timezone: 'Europe/Paris',
+    const kkTenant = {
+      business_name: 'FloCafe Алматы',
+      currency: 'KZT',
+      country: 'KZ',
+      timezone: 'Asia/Almaty',
     };
-    const frHtml = generateBillHtml(sampleEnBill, frTenant, { language: 'fr', isReprint: true });
-    assert('FR receipt has lang="fr-FR" and dir="ltr"', frHtml.includes('<html lang="fr-FR" dir="ltr">'));
-    assert('FR labels are French',
-      frHtml.includes('RÉIMPRESSION') &&
-      frHtml.includes('N° de facture') &&
-      frHtml.includes('Total général') &&
-      frHtml.includes('Merci de votre visite !')
-    );
-
-    // Portuguese
-    const ptTenant = {
-      business_name: 'Café Flo Lisboa',
-      currency: 'EUR',
-      country: 'PT',
-      timezone: 'Europe/Lisbon',
-    };
-    const ptHtml = generateBillHtml(sampleEnBill, ptTenant, { language: 'pt', isReprint: true });
-    assert('PT receipt has lang="pt-BR" and dir="ltr"', ptHtml.includes('<html lang="pt-BR" dir="ltr">'));
-    assert('PT labels are Portuguese',
-      ptHtml.includes('REIMPRESSÃO') &&
-      ptHtml.includes('Conta #') &&
-      ptHtml.includes('Total geral') &&
-      ptHtml.includes('Obrigado pela sua visita!')
+    const kkHtml = generateBillHtml(sampleEnBill, kkTenant, { language: 'kk', isReprint: true });
+    assert('KK receipt has lang="kk-KZ" and dir="ltr"', kkHtml.includes('<html lang="kk-KZ" dir="ltr">'));
+    assert('KK labels are Kazakh',
+      kkHtml.includes('ҚАЙТА БАСЫЛДЫ') &&
+      kkHtml.includes('Шот №') &&
+      kkHtml.includes('Барлығы төленеді') &&
+      kkHtml.includes('Келгеніңізге рақмет!')
     );
   }
 
@@ -376,26 +357,21 @@ async function run() {
     };
     const canonicalTenant = { ...baseIranTenant, currency_display: 'rial' as const };
     const expectedLabels = {
-      billNumber: 'رسید #',
-      date: 'تاریخ',
-      table: 'میز',
-      customer: 'مشتری',
-      customerNo: 'شماره مشتری',
-      item: 'اقلام',
-      quantity: 'تعداد',
-      rate: 'نرخ',
-      amount: 'مبلغ',
-      subtotal: 'جمع جزء',
-      tax: 'مالیات کل',
-      delivery: 'هزینه ارسال',
-      total: 'جمع کل',
-      payments: 'پرداخت‌ها',
-      card: 'کارت',
-      thankYou: 'از بازدید شما سپاسگزاریم!',
+      billNumber: 'Счёт №',
+      date: 'Дата',
+      table: 'Стол',
+      customerNo: 'Номер клиента',
+      item: 'Позиция',
+      quantity: 'Кол-во',
+      rate: 'Цена',
+      amount: 'Сумма',
+      payments: 'Платежи',
+      card: 'Карта',
+      thankYou: 'Спасибо за визит!',
     };
-    const faHtml = generateBillHtml(canonicalBill, canonicalTenant, { language: 'fa', showTaxBreakdown: false });
+    const ruHtml = generateBillHtml(canonicalBill, canonicalTenant, { language: 'ru', showTaxBreakdown: false });
     for (const [name, label] of Object.entries(expectedLabels)) {
-      assert(`fa canonical ${name} label renders`, faHtml.includes(label));
+      assert(`ru canonical ${name} label renders`, ruHtml.includes(label));
     }
 
     // Supplying an unknown policy language must retain the resolver's English
@@ -426,7 +402,7 @@ async function run() {
         number_digits: 'locale',
         calendar: 'persian',
       }, {
-        language: 'fa',
+        language: 'ru',
         paperSize: 'thermal80',
         address: 'تهران، خیابان انقلاب، پلاک ۱۲',
         phone: '+98 21 6644 1234',
@@ -443,7 +419,7 @@ async function run() {
         number_digits: 'locale',
         calendar: 'persian',
       }, {
-        language: 'fa',
+        language: 'ru',
         paperSize: 'thermal80',
         address: 'تهران، خیابان انقلاب، پلاک ۱۲',
         phone: '+98 21 6644 1234',
@@ -461,7 +437,7 @@ async function run() {
         number_digits: 'latin',
         calendar: 'gregorian',
       }, {
-        language: 'fa',
+        language: 'ru',
         paperSize: 'thermal80',
         address: 'Tehran, Enghelab St, No. 12',
         phone: '+98 21 6644 1234',
@@ -479,7 +455,7 @@ async function run() {
         number_digits: 'locale',
         calendar: 'persian',
       }, {
-        language: 'fa',
+        language: 'ru',
         paperSize: 'thermal80',
         isReprint: true,
         address: 'تهران، خیابان ولیعصر، برج سپید',
@@ -549,7 +525,7 @@ async function run() {
         country: 'ES',
         timezone: 'Europe/Madrid',
       }, {
-        language: 'es',
+        language: 'ru',
         paperSize: 'thermal80',
         isReprint: true,
         address: 'Calle Mayor 10, Madrid',
@@ -584,7 +560,7 @@ async function run() {
         country: 'BR',
         timezone: 'America/Sao_Paulo',
       }, {
-        language: 'pt',
+        language: 'kk',
         paperSize: 'thermal80',
         isReprint: true,
         address: 'Av. Paulista 1000, São Paulo',

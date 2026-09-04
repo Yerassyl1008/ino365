@@ -126,9 +126,9 @@ describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
     assert.equal(alertResult.count, 0, 'Fresh demo install must have 0 invalid phone alerts');
   });
 
-  test('seedDemoRestaurant in ES (AR) profile seeds valid Argentine E.164 phones', () => {
+  test('seedDemoRestaurant in AR profile seeds valid Argentine E.164 phones', () => {
     const db = getDatabase();
-    seedSetupProfile(db, 'demo', 'qsr', 'es', 'AR');
+    seedSetupProfile(db, 'demo', 'qsr', 'en', 'AR');
 
     const customers = db.prepare('SELECT id, name, phone, phone_digits FROM customers WHERE is_active = 1').all();
     assert.ok(customers.length >= 3);
@@ -139,30 +139,30 @@ describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
     }
   });
 
-  test('seedDemoRestaurant in French profile seeds localized demo data', () => {
+  test('seedDemoRestaurant in Russian profile seeds localized demo data', () => {
     const db = getDatabase();
-    seedSetupProfile(db, 'demo', 'finedine', 'fr', 'FR');
+    seedSetupProfile(db, 'demo', 'finedine', 'ru', 'RU');
 
-    assert.equal(db.prepare("SELECT name FROM categories WHERE id = 'cat-demo-starters'").get().name, 'Entrées');
-    assert.equal(db.prepare("SELECT name FROM products WHERE id = 'prod-demo-burger'").get().name, 'Burger Classique');
-    assert.equal(db.prepare("SELECT name FROM users WHERE id = 'user-demo-manager'").get().name, 'Gérant Démo');
+    assert.equal(db.prepare("SELECT name FROM categories WHERE id = 'cat-demo-starters'").get().name, 'Закуски');
+    assert.equal(db.prepare("SELECT name FROM products WHERE id = 'prod-demo-plov'").get().name, 'Плов');
+    assert.equal(db.prepare("SELECT name FROM users WHERE id = 'user-demo-manager'").get().name, 'Демо-менеджер');
 
     const customer = db.prepare("SELECT phone, country_code FROM customers WHERE id = 'cust-demo-1'").get();
-    assert.equal(customer.phone, '+33145678901');
-    assert.equal(customer.country_code, '+33');
+    assert.ok(customer.phone.startsWith('+7'), `Russian customer phone ${customer.phone} must start with +7`);
+    assert.equal(customer.country_code, '+7');
   });
 
-  test('seedDemoRestaurant in German profile seeds localized demo data', () => {
+  test('seedDemoRestaurant in Kazakh profile seeds localized demo data', () => {
     const db = getDatabase();
-    seedSetupProfile(db, 'demo', 'finedine', 'de', 'DE');
+    seedSetupProfile(db, 'demo', 'finedine', 'kk', 'KZ');
 
-    assert.equal(db.prepare("SELECT name FROM categories WHERE id = 'cat-demo-beverages'").get().name, 'Getränke');
-    assert.equal(db.prepare("SELECT name FROM products WHERE id = 'prod-demo-burger'").get().name, 'Klassischer Burger');
-    assert.equal(db.prepare("SELECT name FROM users WHERE id = 'user-demo-manager'").get().name, 'Demo-Manager');
+    assert.equal(db.prepare("SELECT name FROM categories WHERE id = 'cat-demo-beverages'").get().name, 'Сусындар');
+    assert.equal(db.prepare("SELECT name FROM products WHERE id = 'prod-demo-plov'").get().name, 'Палау');
+    assert.equal(db.prepare("SELECT name FROM users WHERE id = 'user-demo-manager'").get().name, 'Демо-менеджер');
 
     const customer = db.prepare("SELECT phone, country_code FROM customers WHERE id = 'cust-demo-1'").get();
-    assert.equal(customer.phone, '+4915123456789');
-    assert.equal(customer.country_code, '+49');
+    assert.ok(customer.phone.startsWith('+7'), `Kazakh customer phone ${customer.phone} must start with +7`);
+    assert.equal(customer.country_code, '+7');
   });
 
   test('PUT /api/settings/business validates and normalizes business_phone', async () => {

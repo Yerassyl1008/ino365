@@ -30,6 +30,7 @@ import {
   formatKOT,
   escPosToText,
   buildEscPos,
+  foldThermalText,
 } from '../main/printers/thermal';
 import { renderClassicReceiptViaDocument } from '../main/printers/document-classic';
 import {
@@ -541,36 +542,36 @@ function run(): void {
   //    policy resolves independently of the receipt language.
   // ------------------------------------------------------------------
   section('Localized receipt labels end-to-end');
-  for (const language of ['fa', 'es', 'fr'] as const) {
+  for (const language of ['ru', 'kk'] as const) {
     for (const template of ['classic', 'compact'] as const) {
       const label = `${template}/${language}`;
       const warnings: Warnings = [];
-      // Shaping-capable profile: localized label text may actually print.
+      // Cyrillic is folded to ASCII for generic ESC/POS firmware.
       const text = escPosToText(
-        formatReceipt(order, bill, business, template, 42, false, false, 'full', warnings, true, language),
+        formatReceipt(order, bill, business, template, 42, false, false, 'full', warnings, false, language),
       );
-      const totalLabel = printLabel(language, 'print.grandTotal');
+      const totalLabel = foldThermalText(language, printLabel(language, 'print.grandTotal'));
       warn(text.includes(totalLabel), `${label}: grand-total label localized (${totalLabel})`);
-      const subtotalLabel = printLabel(language, 'pos.subtotal');
+      const subtotalLabel = foldThermalText(language, printLabel(language, 'pos.subtotal'));
       warn(text.includes(subtotalLabel), `${label}: subtotal label localized (${subtotalLabel})`);
     }
   }
 
   section('KOT language policy independence');
   {
-    // Store language fa + inherit KOT policy → kitchen tickets follow the store.
-    const inherited = resolveKotLanguage({ primary: { mode: 'inherit' }, additional: [] as const }, 'fa');
-    warn(inherited === 'fa', 'KOT inherit policy follows the store language');
+    // Store language ru + inherit KOT policy → kitchen tickets follow the store.
+    const inherited = resolveKotLanguage({ primary: { mode: 'inherit' }, additional: [] as const }, 'ru');
+    warn(inherited === 'ru', 'KOT inherit policy follows the store language');
     // Fixed kitchen policy overrides the store language independently.
-    const fixedEn = resolveKotLanguage({ primary: { mode: 'fixed', language: 'en' }, additional: [] as const }, 'fa');
+    const fixedEn = resolveKotLanguage({ primary: { mode: 'fixed', language: 'en' }, additional: [] as const }, 'ru');
     warn(fixedEn === 'en', 'KOT fixed policy overrides the store language');
     // Receipt policy with an additional language resolves primary first.
     const receiptLangs = resolveReceiptLanguages(
-      { primary: { mode: 'inherit' }, additional: ['es'] as const },
-      'fa',
+      { primary: { mode: 'inherit' }, additional: ['kk'] as const },
+      'ru',
     );
-    warn(receiptLangs[0] === 'fa' && receiptLangs[1] === 'es', 'receipt policy resolves primary + additional');
-    // A fixed-en KOT ticket stays English even for a fa store (#443).
+    warn(receiptLangs[0] === 'ru' && receiptLangs[1] === 'kk', 'receipt policy resolves primary + additional');
+    // A fixed-en KOT ticket stays English even for a ru store (#443).
     const kotTextEn = escPosToText(formatKOT(kotOrder, order.items, 'Main Kitchen', 42, false, 'full', 'en-US', undefined, [], false, fixedEn));
     warn(kotTextEn.includes('Time:'), 'fixed-en KOT ticket renders English time label');
   }

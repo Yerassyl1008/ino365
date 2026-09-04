@@ -5,8 +5,8 @@
  *   1. Block construction from a fixture bill (kernel-level, stub resolver).
  *   2. Bilingual label resolution into TotalsBlock (semantic pairs, never
  *      pre-concatenated "A / B" strings).
- *   3. Direction annotations: RTL base for fa primary, LTR islands for
- *      invoice numbers / phones, RTL for Persian item names.
+ *   3. Direction annotations: an injected RTL base direction, LTR islands for
+ *      invoice numbers / phones, RTL for RTL-script item names.
  *   4. Builder purity: printed truth passes through untouched (no
  *      financial recomputation) and no IO imports in the kernel modules.
  *
@@ -30,6 +30,7 @@ import {
   buildBillPrintData,
   detectPrintLanguageDirection,
 } from '../main/printers/document-classic';
+import { PRINT_LABEL_LANGUAGES } from '../main/print/print-labels.generated';
 import { buildParityFixtures } from './print-parity.test';
 
 // ---------------------------------------------------------------------------
@@ -212,13 +213,13 @@ console.log('\n▶ Printed truth is never recomputed');
 console.log('\n▶ Bilingual label resolution into TotalsBlock');
 {
   const document = buildBillDocument(makePrintData(), makeContext({
-    languages: ['en', 'fa'],
+    languages: ['en', 'ru'],
   }));
   const totals = blockOf(document, 'totals');
   assert.equal(totals.subtotal.label.primary, 'pos.subtotal[en]');
-  assert.equal(totals.subtotal.label.secondary, 'pos.subtotal[fa]');
+  assert.equal(totals.subtotal.label.secondary, 'pos.subtotal[ru]');
   assert.equal(totals.grandTotal.label.primary, 'print.grandTotal[en]');
-  assert.equal(totals.grandTotal.label.secondary, 'print.grandTotal[fa]');
+  assert.equal(totals.grandTotal.label.secondary, 'print.grandTotal[ru]');
   ok('totals labels carry concept + primary + secondary variants');
 
   const renderedLabels: Array<{ primary: string; secondary?: string }> = [];
@@ -258,12 +259,14 @@ console.log('\n▶ Bilingual label resolution into TotalsBlock');
 // 3. Direction annotations
 // ---------------------------------------------------------------------------
 
-console.log('\n▶ Direction annotations (fa primary → RTL base, LTR islands)');
+// The kernel never reads the language registry: the caller injects the base
+// direction, so an RTL document is exercised by injecting `rtl` directly.
+console.log('\n▶ Direction annotations (injected RTL base, LTR islands)');
 {
   const document = buildBillDocument(
     makePrintData({ business: { customerName: 'Asha Kumar', customerPhone: '+91 98765 43210' } }),
     makeContext({
-      languages: ['fa'],
+      languages: ['en'],
       baseDirection: 'rtl',
     }),
   );
@@ -311,8 +314,14 @@ console.log('\n▶ Backend PrintData normalization (main layer)');
   assert.equal(unsetFlags.business.showTaxId, 'auto', 'unset show_tax_id maps to auto');
   ok('payment_details JSON string parsed; flags mapped');
 
+  // Direction is probed from each language's own generated label strings, so
+  // every language with a generated table resolves a concrete direction and
+  // unregistered codes fall back to ltr.
+  for (const lang of PRINT_LABEL_LANGUAGES) {
+    const direction = detectPrintLanguageDirection(lang);
+    assert.ok(direction === 'ltr' || direction === 'rtl', `${lang} resolves a known direction (got ${direction})`);
+  }
   assert.equal(detectPrintLanguageDirection('en'), 'ltr');
-  assert.equal(detectPrintLanguageDirection('fa'), 'rtl', 'fa labels carry RTL script');
   assert.equal(detectPrintLanguageDirection('unknown-lang'), 'ltr', 'unregistered languages default ltr');
   ok('registry-derived language directions');
 
@@ -400,7 +409,7 @@ console.log('\n▶ KOT document builder (#443)');
   ok('KOT item rows carry quantity/name/addons/instructions');
 
   // Direction annotations follow the injected base direction.
-  const rtlDoc = buildKotDocument(kotData, makeContext({ languages: ['fa'], baseDirection: 'rtl' }));
+  const rtlDoc = buildKotDocument(kotData, makeContext({ languages: ['en'], baseDirection: 'rtl' }));
   assert.equal(rtlDoc.direction.base, 'rtl');
   const rtlItems = getBlock(rtlDoc as any, 'kot-items' as any) as any;
   assert.equal(rtlItems?.rows[1].name.direction, 'rtl', 'Persian item name follows rtl base');

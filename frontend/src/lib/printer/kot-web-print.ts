@@ -102,7 +102,7 @@ function resolveOrderType(type: unknown, language: Language, tr: (key: string) =
     takeaway: 'pos.orderTypeTakeaway',
   };
   const normalized = String(type ?? '').trim();
-  if (language !== 'de') return normalized.replace(/_/g, ' ').toUpperCase();
+  if (language === 'en') return normalized.replace(/_/g, ' ').toUpperCase();
   const key = keys[normalized];
   if (!key) return normalized.replace(/_/g, ' ').toUpperCase();
   const resolved = tr(key);

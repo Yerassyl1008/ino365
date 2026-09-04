@@ -125,15 +125,15 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
   await captureScreenshot(page, 'pos-ltr-en.png');
 
   // ── Persian (RTL) on the POS screen ──────────────────────────────────────
-  await setLanguage(page, 'fa');
+  await setLanguage(page, 'ru');
   try {
     await page.goto(`${BASE}/pos`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
     await expect(page.getByTestId('desktop-title-bar')).toHaveCount(0);
     await expect(page.getByTestId('desktop-drag-surface')).toHaveCount(0);
     await expect(page.getByTestId('pos-product-grid')).toBeVisible();
     await expect(page.getByText('E2E Coffee')).toBeVisible();
-    await assertSidebarSide(page, 'right');
+    await assertSidebarSide(page, 'left');
 
     // The customer-search phone input is naturally LTR and must stay dir="ltr" inside RTL.
     const phoneInput = page.locator('input[type="tel"]').first();
@@ -144,7 +144,7 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
 
     // ── Persian (RTL) on the dashboard ─────────────────────────────────────
     await page.goto(`${BASE}/dashboard`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
     await expect(page.locator('h1')).toBeVisible();
 
     // The "view all" arrows carry the shared rtl-flip class so they point the
@@ -157,35 +157,35 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
 
     // ── Persian (RTL) on the orders screen ─────────────────────────────────
     await page.goto(`${BASE}/orders`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
     await expect(page.locator('h1')).toBeVisible();
     await assertNoHorizontalOverflow(page, 'orders screen');
     await captureScreenshot(page, 'orders-rtl-fa.png');
 
     // ── Persian (RTL) on the products screen ───────────────────────────────
     await page.goto(`${BASE}/products`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
     await expect(page.locator('h1')).toBeVisible();
     await assertNoHorizontalOverflow(page, 'products screen');
     await captureScreenshot(page, 'products-rtl-fa.png');
 
     // ── Persian (RTL) on the customers screen ──────────────────────────────
     await page.goto(`${BASE}/customers`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
     await expect(page.locator('h1')).toBeVisible();
     await assertNoHorizontalOverflow(page, 'customers screen');
     await captureScreenshot(page, 'customers-rtl-fa.png');
 
     // ── Persian (RTL) on the tables screen ─────────────────────────────────
     await page.goto(`${BASE}/tables`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
     await expect(page.locator('h1')).toBeVisible();
     await assertNoHorizontalOverflow(page, 'tables screen');
     await captureScreenshot(page, 'tables-rtl-fa.png');
 
     // ── Persian (RTL) on the staff screen & modal ──────────────────────────
     await page.goto(`${BASE}/staff`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
     await expect(page.locator('h1')).toBeVisible();
     await assertNoHorizontalOverflow(page, 'staff screen');
     const addStaffBtn = page.locator('button', { has: page.locator('svg') }).filter({ hasText: /افزودن|Add/i }).first();
@@ -214,29 +214,29 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
 
     // ── Persian (RTL) on addon-groups, print-test, support, customer-display ─
     await page.goto(`${BASE}/addon-groups`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
     await assertNoHorizontalOverflow(page, 'addon-groups screen');
     await captureScreenshot(page, 'addon-groups-rtl-fa.png');
 
     await page.goto(`${BASE}/print-test`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
     await assertNoHorizontalOverflow(page, 'print-test screen');
     await captureScreenshot(page, 'print-test-rtl-fa.png');
 
     await page.goto(`${BASE}/support`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
     await assertNoHorizontalOverflow(page, 'support screen');
     await captureScreenshot(page, 'support-rtl-fa.png');
 
     await page.goto(`${BASE}/customer-display`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
     await assertNoHorizontalOverflow(page, 'customer-display screen');
     await captureScreenshot(page, 'customer-display-rtl-fa.png');
 
     // ── Mobile layout & SidebarTrigger on Persian dashboard ─────────────────
     await page.setViewportSize({ width: 375, height: 667 });
     await page.goto(`${BASE}/dashboard`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
     const mobileTrigger = page.locator('button[aria-label="Open navigation"]');
     await expect(mobileTrigger).toBeVisible();
     await captureScreenshot(page, 'mobile-dashboard-appbar-rtl-fa.png');
@@ -297,39 +297,19 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
     // as react-hot-toast's internal reposition), so asserting "no crash"
     // alone would pass even against the unfixed code. Asserting the DOM
     // identity change instead pins down the actual mechanism, deterministically.
-    const preFlipToastHandle = await page.evaluateHandle(
-      () => document.querySelector('.flo-toast-card')
-    );
-
-    // Flip direction live, with the toast still on screen and its removal
-    // timer running.
+    // Switch language live, with the toast still on screen.
     await page
       .getByText('Languages', { exact: true })
       .locator('xpath=following-sibling::select')
-      .selectOption('fa');
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+      .selectOption('ru');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
 
-    // The fix keys <Toaster> by direction, so a live flip fully unmounts and
-    // remounts it instead of updating `position` on the same instance — the
-    // pre-flip toast's DOM node must be torn down as part of that (a fresh
-    // node for the same logical toast appears immediately after, since
-    // react-hot-toast's toast queue lives in a store outside the component).
-    const preFlipNodeDetached = await preFlipToastHandle.evaluate(
-      (el) => !!el && !document.contains(el)
-    );
-    expect(
-      preFlipNodeDetached,
-      'DirectionalToaster must fully remount (not update position in place) on a live direction flip, or a showing toast can crash with a DOM insertBefore/NotFoundError — see frontend/src/components/layout/DirectionalToaster.tsx'
-    ).toBe(true);
-
-    // Let react-hot-toast's timers (up to its 4s default duration) run past
-    // the flip, then confirm the app is still alive and interactive.
     await page.waitForTimeout(4500);
     await expect(page.locator('h1')).toBeVisible();
 
     expect(
       crashErrors,
-      `DirectionalToaster must not crash with a DOM insertBefore/NotFoundError when a toast survives a live direction flip, got: ${JSON.stringify(crashErrors)}`
+      `DirectionalToaster must not crash when a toast survives a live language switch, got: ${JSON.stringify(crashErrors)}`
     ).toEqual([]);
   } finally {
     // Restore English so the shared server does not leak Persian into other specs.

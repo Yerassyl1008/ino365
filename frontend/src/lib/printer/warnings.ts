@@ -10,7 +10,7 @@
  * why.
  */
 
-import { CURRENCY_ASCII_MAP, normalizeGermanThermalText } from './unicode';
+import { CURRENCY_ASCII_MAP, foldThermalText } from './unicode';
 
 export interface PrintWarning {
   field: string;
@@ -135,7 +135,7 @@ export function safePrinterText<T extends { text(value: string): T }>(
   language?: string,
 ): T {
   if (!value) return enc;
-  const printableValue = language === 'de' ? normalizeGermanThermalText(value) : value;
+  const printableValue = foldThermalText(language, value);
   if (hasUnsupportedPrinterChars(printableValue)) {
     if (arabicShaping && isArabicShapingSafeLine(printableValue)) {
       const sanitized = printableValue.replace(ESCPOS_TEXT_CONTROL_RE, '');

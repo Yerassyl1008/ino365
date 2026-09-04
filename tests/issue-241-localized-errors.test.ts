@@ -1,5 +1,6 @@
 /**
- * Verification test for Issue #241: Localized error and message surfaces across en, es, fr, pt, fa.
+ * Verification test for Issue #241: Localized error and message surfaces across
+ * every UI language registered in `frontend/src/lib/i18n/languages.ts`.
  *
  * Validates that:
  *  1. POS printer support-error card renders localized headers, messages, and action buttons
@@ -81,7 +82,13 @@ React.useSyncExternalStore = function (subscribe: any, getSnapshot: any, getServ
   return origUseSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 };
 
-const { getLanguageDirection, loadLocaleMessages, getCachedMessages, getLanguageLocale } = require('@/lib/i18n');
+const {
+  LANGUAGES: LANGUAGE_REGISTRY,
+  getLanguageDirection,
+  loadLocaleMessages,
+  getCachedMessages,
+  getLanguageLocale,
+} = require('@/lib/i18n');
 const { createTranslator } = frontendRequire('use-intl/core');
 const { IntlProvider } = frontendRequire('use-intl');
 const { usePosSettingsStore } = require('@/store/pos-settings');
@@ -94,8 +101,10 @@ function assert(condition: boolean, msg: string): void {
   if (!condition) throw new Error(`Assertion failed: ${msg}`);
 }
 
-const LANGUAGES = ['en', 'es', 'fr', 'pt', 'fa'] as const;
-type Lang = (typeof LANGUAGES)[number];
+// Driven off the i18n registry so adding or removing a UI language
+// automatically widens/narrows this suite instead of silently skipping one.
+type Lang = string;
+const LANGUAGES: Lang[] = Object.keys(LANGUAGE_REGISTRY);
 
 const t = (key: string, lang: Lang, params?: Record<string, string | number>): string => {
   const translator = createTranslator({
@@ -219,7 +228,7 @@ async function run(): Promise<void> {
   const generatedArtifacts: Array<{ kind: string; label: string; path: string }> = [];
 
   // =========================================================================
-  // 1. Check all required translation keys across en, es, fr, pt, fa
+  // 1. Check all required translation keys across every registered language
   // =========================================================================
   const REQUIRED_KEYS = [
     'pos.printingFailed',
@@ -239,18 +248,19 @@ async function run(): Promise<void> {
   await Promise.all(LANGUAGES.map((lang) => loadLocaleMessages(lang)));
 
   console.log('\n--- 1. Translation Keys Integrity ---');
+  assert(LANGUAGES.includes('en'), 'i18n registry must expose the English fallback bundle');
+  assert(LANGUAGES.length >= 2, 'at least one non-English language must be registered to test localization');
   for (const key of REQUIRED_KEYS) {
     for (const lang of LANGUAGES) {
       const translated = t(key, lang);
       assert(typeof translated === 'string' && translated.length > 0, `Missing translation for ${key} in ${lang}`);
       assert(translated !== key, `Translation for ${key} returned raw key in ${lang}`);
-      if (lang === 'fa') {
-        // Persian must not be equal to English
-        const enVal = t(key, 'en');
-        assert(translated !== enVal, `Persian translation for ${key} falls back to English: "${translated}"`);
+      if (lang !== 'en') {
+        // A non-English bundle must carry its own string, not the English one.
+        assert(translated !== t(key, 'en'), `${lang} translation for ${key} falls back to English: "${translated}"`);
       }
     }
-    console.log(`  ✓ ${key}: en="${t(key, 'en')}" | es="${t(key, 'es')}" | fr="${t(key, 'fr')}" | pt="${t(key, 'pt')}" | fa="${t(key, 'fa')}"`);
+    console.log(`  ✓ ${key}: ${LANGUAGES.map((lang) => `${lang}="${t(key, lang)}"`).join(' | ')}`);
   }
 
   // =========================================================================

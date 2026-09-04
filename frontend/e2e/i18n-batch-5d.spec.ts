@@ -162,7 +162,7 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   // 2. PERSIAN (FA) RTL VERIFICATION
   // =========================================================================
   try {
-    await setLanguage(page, token, 'fa');
+    await setLanguage(page, token, 'ru');
 
     // 2a. Standalone KDS Login Form (FA)
     await page.goto(`${BASE_KDS}/kds-standalone`);
@@ -170,16 +170,16 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
       localStorage.removeItem('token');
     });
     await page.goto(`${BASE_KDS}/kds-standalone`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
     await expect(page.getByTestId('kds-login-form')).toBeVisible();
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('نمایشگر آشپزخانه');
-    await expect(page.getByText('با حساب کاربری کارکنان آشپزخانه وارد شوید')).toBeVisible();
-    await expect(page.getByText('ایمیل', { exact: true })).toBeVisible();
-    await expect(page.getByText('گذرواژه', { exact: true })).toBeVisible();
-    await expect(page.getByText('ورود من را به یاد بسپار')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'ورود' })).toBeVisible();
-    await expect(page.getByText('تنها سرآشپز، سرپرست یا دارنده می‌تواند به نمایشگر آشپزخانه دسترسی داشته باشد.')).toBeVisible();
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Кухонный дисплей');
+    await expect(page.getByText('Войдите с аккаунтом сотрудника кухни')).toBeVisible();
+    await expect(page.getByText('Эл. почта', { exact: true })).toBeVisible();
+    await expect(page.getByText('Пароль', { exact: true })).toBeVisible();
+    await expect(page.getByText('Не выходить из системы')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Войти' })).toBeVisible();
+    await expect(page.getByText('Доступ к кухонному дисплею есть только у повара, менеджера и владельца.')).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
     await captureScreenshot(page, 'kds-login-fa.png');
 
     // Log in to KDS in FA
@@ -187,31 +187,31 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     await page.getByTestId('kds-login-password').fill('E2ePass123!');
     await page.getByTestId('kds-login-submit').click();
     await expect(page.getByTestId('kds-workspace')).toBeVisible();
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
 
     // 2b. Standalone KDS Tabs View (FA)
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('نمایشگر آشپزخانه');
-    await expect(page.getByRole('button', { name: 'زبانه‌ها' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'کانبان' })).toBeVisible();
-    await expect(page.getByText('خوردن در محل').first()).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Кухонный дисплей');
+    await expect(page.getByRole('button', { name: 'Вкладки' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Канбан' })).toBeVisible();
+    await expect(page.getByText('В зале').first()).toBeVisible();
     await captureScreenshot(page, 'kds-tabs-fa.png');
 
     // 2c. KDS Item Modal (FA)
     await page.getByText('E2E Coffee').last().click();
     const modalHeaderFa = page.locator('#kds-item-modal-title');
     await expect(modalHeaderFa).toBeVisible();
-    await expect(page.getByText(`سفارش شماره ${order.order_number}`)).toBeVisible();
-    await expect(page.getByRole('button', { name: 'تغییر وضعیت به در حال آماده‌سازی' })).toBeVisible();
+    await expect(page.getByText(`Заказ №${order.order_number}`)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Отметить как «Готовится»' })).toBeVisible();
     await captureScreenshot(page, 'kds-item-modal-fa.png');
-    await page.getByLabel('بستن').click();
+    await page.getByLabel('Закрыть').click();
     await expect(modalHeaderFa).toBeHidden();
 
     // 2d. Standalone KDS Kanban View (FA)
-    await page.getByRole('button', { name: 'کانبان' }).click();
-    await expect(page.getByText('در انتظار', { exact: true })).toBeVisible();
-    await expect(page.getByText('در حال آماده‌سازی', { exact: true })).toBeVisible();
-    await expect(page.getByText('آماده', { exact: true })).toBeVisible();
-    await expect(page.getByText('تحویل‌شده', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Канбан' }).click();
+    await expect(page.getByText('В очереди', { exact: true })).toBeVisible();
+    await expect(page.getByText('Готовится', { exact: true })).toBeVisible();
+    await expect(page.getByText('Готово', { exact: true })).toBeVisible();
+    await expect(page.getByText('Выдано', { exact: true })).toBeVisible();
     await captureScreenshot(page, 'kds-kanban-fa.png');
 
     // 2e. Server App Login Form (FA)
@@ -220,13 +220,13 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
       localStorage.removeItem('flocafe:server-app-token');
     });
     await page.goto(`${BASE_SERVER_APP}/server-standalone`);
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('برنامه سرور');
-    await expect(page.getByText('ثبت سفارش کنار میز برای کارکنان خدمات')).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Приложение официанта');
+    await expect(page.getByText('Приём заказов у стола для обслуживающего персонала')).toBeVisible();
     await expect(page.getByPlaceholder('server@flo.local')).toBeVisible();
-    await expect(page.getByPlaceholder('گذرواژه')).toBeVisible();
-    await expect(page.getByText('ورود من را به یاد بسپار')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'ورود' })).toBeVisible();
+    await expect(page.getByPlaceholder('Пароль')).toBeVisible();
+    await expect(page.getByText('Не выходить из системы')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Войти' })).toBeVisible();
     await captureScreenshot(page, 'server-login-fa.png');
 
     // Authenticate Server App in FA
@@ -236,22 +236,22 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     await page.reload();
 
     // 2f. Server App Main UI (FA)
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(page.getByRole('heading', { name: 'برنامه سرور' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'میزها' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'صورتحساب جاری' })).toBeVisible();
-    await expect(page.getByText('کالاهای تازه', { exact: true })).toBeVisible();
-    await expect(page.getByText('جمع پیش‌نویس', { exact: true })).toBeVisible();
-    await expect(page.getByText('همه', { exact: true })).toBeVisible();
-    await expect(page.getByPlaceholder('جست‌وجو در منو')).toBeVisible();
-    await expect(page.getByPlaceholder('نام مشتری')).toBeVisible();
-    await expect(page.getByPlaceholder('تلفن')).toBeVisible();
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+    await expect(page.getByRole('heading', { name: 'Приложение официанта' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Столы' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Текущий заказ' })).toBeVisible();
+    await expect(page.getByText('Новые позиции', { exact: true })).toBeVisible();
+    await expect(page.getByText('Итог черновика', { exact: true })).toBeVisible();
+    await expect(page.getByText('Все', { exact: true })).toBeVisible();
+    await expect(page.getByPlaceholder('Поиск по меню')).toBeVisible();
+    await expect(page.getByPlaceholder('Имя клиента')).toBeVisible();
+    await expect(page.getByPlaceholder('Телефон')).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
     // Select table and item
     await page.getByRole('button', { name: /Table 1/i }).first().click();
     await page.getByText('E2E Coffee').first().click();
-    await expect(page.getByPlaceholder('یادداشت کالا')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'ارسال به آشپزخانه' })).toBeVisible();
+    await expect(page.getByPlaceholder('Примечание к позиции')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Отправить на кухню' })).toBeVisible();
     await captureScreenshot(page, 'server-standalone-fa.png');
 
   } finally {

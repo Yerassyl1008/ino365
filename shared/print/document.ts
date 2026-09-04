@@ -455,12 +455,18 @@ function paymentLabel(labels: LabelContext, method: string): SemanticLabel {
   return conceptId !== undefined ? resolveSemanticLabel(labels, conceptId) : literalLabel(method);
 }
 
+/**
+ * English tickets keep the uppercased raw order type (`DINE IN`), which is
+ * both the historical byte-for-byte output and already English. Every other
+ * language resolves the semantic concept instead, so the kitchen does not
+ * read an untranslated enum.
+ */
 function kotOrderTypeValue(labels: LabelContext, value: string): string {
-  if (labels.primary !== 'de') return value.replace(/_/g, ' ').trim().toUpperCase();
+  const rawUppercase = value.replace(/_/g, ' ').trim().toUpperCase();
+  if (labels.primary === 'en') return rawUppercase;
   const conceptId = KOT_ORDER_TYPE_CONCEPTS[value];
-  if (conceptId === undefined) return value.replace(/_/g, ' ').trim().toUpperCase();
-  const resolved = resolveSemanticLabel(labels, conceptId).primary;
-  return resolved;
+  if (conceptId === undefined) return rawUppercase;
+  return resolveSemanticLabel(labels, conceptId).primary;
 }
 
 function optionalDirectional(text: string | undefined | null, base: TextDirection): DirectionalText | null {

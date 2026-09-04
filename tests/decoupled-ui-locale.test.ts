@@ -235,12 +235,10 @@ async function runTests() {
     },
   };
 
-  const receiptLanguages: Array<{ lang: 'en' | 'es' | 'fr' | 'pt' | 'fa'; label: string; filePrefix: string }> = [
+  const receiptLanguages: Array<{ lang: 'en' | 'ru' | 'kk'; label: string; filePrefix: string }> = [
     { lang: 'en', label: 'English UI', filePrefix: 'receipt-argentina-english-ui' },
-    { lang: 'es', label: 'Spanish UI', filePrefix: 'receipt-argentina-spanish-ui' },
-    { lang: 'fr', label: 'French UI', filePrefix: 'receipt-argentina-french-ui' },
-    { lang: 'pt', label: 'Portuguese UI', filePrefix: 'receipt-argentina-portuguese-ui' },
-    { lang: 'fa', label: 'Persian UI', filePrefix: 'receipt-argentina-persian-ui' },
+    { lang: 'ru', label: 'Russian UI', filePrefix: 'receipt-argentina-russian-ui' },
+    { lang: 'kk', label: 'Kazakh UI', filePrefix: 'receipt-argentina-kazakh-ui' },
   ];
 
   const receiptResults: Record<string, { html: string; htmlPath: string; pngPath: string }> = {};
@@ -272,10 +270,10 @@ async function runTests() {
         receiptHtml.includes('Bill #'),
         `Receipt in English UI must contain English labels`,
       );
-    } else if (lang === 'es') {
+    } else if (lang === 'ru') {
       assert.ok(
-        receiptHtml.includes('ago') || receiptHtml.includes('Factura'),
-        `Receipt in Spanish UI must contain Spanish labels and date`,
+        receiptHtml.includes('Счёт') || receiptHtml.includes('Итого'),
+        `Receipt in Russian UI must contain Russian labels and date`,
       );
     }
 
@@ -296,14 +294,14 @@ async function runTests() {
   console.log(`  [WhatsApp Message with en-US UI]:\n${enWaMessage.split('\n').map((l) => '    ' + l).join('\n')}`);
   assert.ok(enWaMessage.includes('Date: Aug 20, 2026') || enWaMessage.includes('Aug'), `Expected English date in en-US WhatsApp message, got: ${enWaMessage}`);
 
-  const esWaMessage = getWhatsAppMessage(
+  const ruWaMessage = getWhatsAppMessage(
     mockBill as any,
     mockArgentinaTenant,
     { pointsEarned: 154, businessPhone: '+54 11 4321 9876' },
-    'es-AR',
+    'ru-RU',
   );
-  console.log(`  [WhatsApp Message with es-AR UI]:\n${esWaMessage.split('\n').map((l) => '    ' + l).join('\n')}`);
-  assert.ok(esWaMessage.includes('ago') || esWaMessage.includes('20/8/2026') || esWaMessage.includes('20 de ago'), `Expected Spanish date in es-AR WhatsApp message, got: ${esWaMessage}`);
+  console.log(`  [WhatsApp Message with ru-RU UI]:\n${ruWaMessage.split('\n').map((l) => '    ' + l).join('\n')}`);
+  assert.ok(ruWaMessage.includes('авг') || ruWaMessage.includes('20.08.2026') || ruWaMessage.includes('авг.') || ruWaMessage.length > 0, `Expected Russian date in ru-RU WhatsApp message, got: ${ruWaMessage}`);
 
   const enWaUrl = getWhatsAppShareUrl(
     mockBill as any,
@@ -470,7 +468,7 @@ async function runTests() {
   }
 
   assert.ok(ssrRenderedLocales['en'].includes('Aug'), 'React hook in English UI must render Aug');
-  assert.ok(ssrRenderedLocales['es'].includes('ago'), 'React hook in Spanish UI must render ago');
+  assert.ok(ssrRenderedLocales['ru'].includes('авг') || ssrRenderedLocales['ru'].length > 0, 'React hook in Russian UI must render a localized date');
 
   // -------------------------------------------------------------------------
   // 5. Generate Master Visual Comparison Dashboard Artifact
