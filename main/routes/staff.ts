@@ -6,6 +6,7 @@
  */
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase, now, verifyPin } from '../db';
 import { requireRole, validatePassword, authRateLimit, invalidateUserAuthCache } from '../middleware/security';
@@ -44,6 +45,11 @@ function pinTakenByAnotherUser(db: ReturnType<typeof getDatabase>, pin: unknown,
 
 function normalizeStaffEmail(email: unknown): string {
   return String(email || '').trim().toLowerCase();
+}
+
+/** `users.password` is NOT NULL, so PIN-only staff get an unusable random hash. */
+function unusablePasswordHash(): string {
+  return bcrypt.hashSync(randomBytes(32).toString('hex'), 10);
 }
 
 // ── List ──────────────────────────────────────────────────────────────────────
@@ -110,14 +116,15 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (req
   try {
     const { name, email, password, role, pin } = req.body;
     const normalizedEmail = normalizeStaffEmail(email);
+    const passwordProvided = typeof password === 'string' && password.length > 0;
 
-    if (!name || !normalizedEmail || !password || !role) {
-      return res.status(400).json({ error: 'name, email, password, and role are required' });
+    if (!name || !role) {
+      return res.status(400).json({ error: 'name and role are required' });
     }
-    if (!isValidEmail(normalizedEmail)) {
+    if (normalizedEmail && !isValidEmail(normalizedEmail)) {
       return res.status(400).json({ error: 'Enter a valid email address' });
     }
-    if (!validatePassword(password)) {
+    if (passwordProvided && !validatePassword(password)) {
       return res.status(400).json({ error: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.' });
     }
 
@@ -131,7 +138,7 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (req
     }
 
     if (hasNonEmptyPin(pin) && !pinAllowedForRole(role)) {
-      return res.status(400).json({ error: 'PINs are not permitted for the chef role' });
+      return res.status(400).json({ error: 'PINs are not permitted for this role' });
     }
     if (hasNonEmptyPin(pin) && !isValidPin(pin)) {
       return res.status(400).json({ error: 'PIN must be between 4 and 6 numeric digits' });
@@ -143,20 +150,22 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (req
       return res.status(400).json({ error: 'PIN is already assigned to another staff member' });
     }
 
-    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
-    if (existing) {
-      return res.status(400).json({ error: 'Email already in use' });
+    if (normalizedEmail) {
+      const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
+      if (existing) {
+        return res.status(400).json({ error: 'Email already in use' });
+      }
     }
 
     const id = uuidv4();
-    const hashedPassword = bcrypt.hashSync(password, 10);
+    const hashedPassword = passwordProvided ? bcrypt.hashSync(password, 10) : unusablePasswordHash();
 
     const hashedPin = hasNonEmptyPin(pin) ? bcrypt.hashSync(String(pin), 10) : null;
 
     db.prepare(`
       INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
-    `).run(id, name, normalizedEmail, hashedPassword, role, hashedPin, now(), now());
+    `).run(id, name, normalizedEmail || null, hashedPassword, role, hashedPin, now(), now());
 
     const member = db.prepare(
       `SELECT ${STAFF_SELECT_FIELDS} FROM users WHERE id = ?`
@@ -203,7 +212,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (r
 
     const targetRole = role ?? member.role;
     if (hasNonEmptyPin(pin) && !pinAllowedForRole(targetRole)) {
-      return res.status(400).json({ error: 'PINs are not permitted for the chef role' });
+      return res.status(400).json({ error: 'PINs are not permitted for this role' });
     }
     if (hasNonEmptyPin(pin) && !isValidPin(pin)) {
       return res.status(400).json({ error: 'PIN must be between 4 and 6 numeric digits' });
@@ -212,14 +221,12 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (r
       return res.status(400).json({ error: 'PIN is already assigned to another staff member' });
     }
 
-    if (emailProvided && !normalizedEmail) {
-      return res.status(400).json({ error: 'email is required' });
-    }
-    if (normalizedEmail && !isValidEmail(normalizedEmail)) {
+    const nextEmail = emailProvided ? (normalizedEmail || null) : member.email;
+    if (nextEmail && !isValidEmail(nextEmail)) {
       return res.status(400).json({ error: 'Enter a valid email address' });
     }
-    if (normalizedEmail && normalizedEmail !== member.email) {
-      const existing = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(normalizedEmail, req.params.id);
+    if (nextEmail && nextEmail !== member.email) {
+      const existing = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(nextEmail, req.params.id);
       if (existing) {
         return res.status(400).json({ error: 'Email already in use' });
       }
@@ -246,7 +253,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (r
     const result = db.prepare(`
       UPDATE users SET
         name       = COALESCE(?, name),
-        email      = COALESCE(?, email),
+        email      = ?,
         password   = ?,
         role       = COALESCE(?, role),
         pin_hash   = ?,
@@ -258,7 +265,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (r
           OR (SELECT COUNT(*) FROM users WHERE role = 'owner' AND is_active = 1) > 1
         )
     `).run(
-      name || null, normalizedEmail || null, hashedPassword,
+      name || null, nextEmail, hashedPassword,
       role || null, hashedPin, tokensValidAfter,
       now(), req.params.id, demotesActiveOwner ? 1 : 0,
     );

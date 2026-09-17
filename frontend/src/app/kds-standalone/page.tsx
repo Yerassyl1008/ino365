@@ -62,6 +62,7 @@ export default function KdsStandalonePage() {
   // dashboard-embedded KDS talks to — override the hook's main-server defaults.
   const standaloneEndpoints = {
     login: '/api/auth/login',
+    pinLogin: '/api/auth/pin-login',
     me: '/api/auth/me',
     logout: '/api/auth/logout',
     orders: '/api/kds/orders',

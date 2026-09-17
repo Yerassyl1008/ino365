@@ -446,8 +446,8 @@ router.post('/login', authRateLimit(), asyncHandler(async (req: Request, res: Re
 }));
 
 // ── POST /api/auth/pin-login ──────────────────────────────────────────────────
-// Floor staff (waiter/cashier/manager) sign in with a short PIN. A matching
-// PIN among owner/manager/cashier/server opens that user's personal shift.
+// Staff sign in with a short PIN. A matching PIN among PIN_LOGIN_ROLES
+// authenticates that user; cashier/server/owner/manager also open a shift.
 
 router.post('/pin-login', authRateLimit(), asyncHandler(async (req: Request, res: Response) => {
   try {
@@ -481,7 +481,9 @@ router.post('/pin-login', authRateLimit(), asyncHandler(async (req: Request, res
 
     resetSuccessfulLogin(ip);
     const user = matches[0];
-    ensureOpenShift(db, user.id);
+    if (user.role !== 'chef') {
+      ensureOpenShift(db, user.id);
+    }
     res.json(buildLoginPayload(db, user, remember));
   } catch (error: any) {
     console.error('[Auth] PIN login error:', error);

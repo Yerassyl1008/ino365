@@ -450,6 +450,8 @@ export default function ServerStandalonePage() {
   }
 
   const activeTable = tables.find((table) => table.id === selectedTableId) || null;
+  const tableName = (activeTable?.name?.trim() || (activeTable?.number != null ? String(activeTable.number) : '')).trim();
+  const menuTitle = mobileView === 'menu' && tableName ? tableName : t('title');
   const filteredProducts = products.filter((product) => {
     const matchesCategory = selectedCategoryId === 'all' || product.category_id === selectedCategoryId;
     const matchesQuery = !query || product.name.toLowerCase().includes(query.toLowerCase());
@@ -568,7 +570,7 @@ export default function ServerStandalonePage() {
   return (
     <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-slate-50 text-gray-900">
       <header className="relative z-20 shrink-0 border-b border-gray-200 bg-white/95 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
-        <div className="flex w-full min-w-0 items-center gap-3">
+        <div className="flex w-full min-w-0 items-center gap-2 sm:gap-3">
           {mobileView === 'menu' && (
             <button
               type="button"
@@ -579,10 +581,14 @@ export default function ServerStandalonePage() {
               <ArrowLeft size={22} className="rtl-flip" />
             </button>
           )}
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-brand text-white"><ChefHat size={22} /></div>
+          <div className={`${mobileView === 'menu' ? 'hidden md:flex' : 'flex'} h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-brand text-white`}>
+            <ChefHat size={22} />
+          </div>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-xl font-semibold">{t('title')}</h1>
-            <p className="truncate text-sm text-gray-500">{activeTable ? t('tableLabel', { name: activeTable.name ?? String(activeTable.number) }) : t('selectTable')}</p>
+            <h1 className="truncate text-lg font-semibold leading-tight md:text-xl">{menuTitle}</h1>
+            {!(mobileView === 'menu' && tableName) && (
+              <p className="truncate text-sm text-gray-500">{tableName || t('selectTable')}</p>
+            )}
           </div>
           <button type="button" onClick={() => loadAll().catch(() => toast.error(t('refreshFailed')))} className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-gray-200 text-gray-600"><RefreshCw size={20} /></button>
           <button type="button" onClick={logout} className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-gray-200 text-gray-600"><LogOut size={20} /></button>
@@ -615,38 +621,40 @@ export default function ServerStandalonePage() {
           </div>
         </section>
 
-        <section className={`${mobileView === 'menu' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-white p-4 pb-32 md:flex md:pb-4`}>
-          <div className="mb-4 flex gap-2">
-            <div className="relative min-w-0 flex-1">
+        <section className={`${mobileView === 'menu' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white md:flex`}>
+          <div className="shrink-0 space-y-3 px-4 pt-4">
+            <div className="relative min-w-0">
               <Search size={20} className="pointer-events-none absolute start-4 top-4 text-gray-400" />
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchMenu')} className="h-14 w-full rounded-xl border border-gray-200 bg-white ps-12 pe-4 text-lg text-gray-900 caret-gray-900 focus:border-brand focus:outline-none" />
             </div>
+            <div className="flex min-h-12 min-w-0 max-w-full flex-nowrap gap-2 overflow-x-auto overflow-y-hidden overscroll-x-contain pb-1 touch-pan-x [-webkit-overflow-scrolling:touch]">
+              <button type="button" onClick={() => setSelectedCategoryId('all')} className={`h-12 shrink-0 whitespace-nowrap rounded-full px-5 text-base font-medium ${selectedCategoryId === 'all' ? 'bg-brand text-white' : 'bg-gray-100 text-gray-700'}`}>{tOrders('all')}</button>
+              {categories.map((category) => (
+                <button
+                  key={category.id}
+                  type="button"
+                  onClick={() => setSelectedCategoryId(category.id)}
+                  className={`h-12 shrink-0 whitespace-nowrap rounded-full px-5 text-base font-medium ${selectedCategoryId === category.id ? 'bg-brand text-white' : 'bg-gray-100 text-gray-700'}`}
+                >
+                  {category.name}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
-            <button type="button" onClick={() => setSelectedCategoryId('all')} className={`h-12 shrink-0 rounded-full px-5 text-base font-medium ${selectedCategoryId === 'all' ? 'bg-brand text-white' : 'bg-gray-100 text-gray-700'}`}>{tOrders('all')}</button>
-            {categories.map((category) => (
-              <button
-                key={category.id}
-                type="button"
-                onClick={() => setSelectedCategoryId(category.id)}
-                className={`h-12 shrink-0 rounded-full px-5 text-base font-medium ${selectedCategoryId === category.id ? 'bg-brand text-white' : 'bg-gray-100 text-gray-700'}`}
-              >
-                {category.name}
-              </button>
-            ))}
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
-            {filteredProducts.map((product) => (
-              <button
-                key={product.id}
-                type="button"
-                onClick={() => addProduct(product)}
-                className="flex min-h-16 min-w-0 items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-4 text-start active:bg-brand/5 md:min-h-28 md:flex-col md:items-start"
-              >
-                <span className="text-lg font-semibold leading-snug">{product.name}</span>
-                <span className="shrink-0 text-lg font-medium text-gray-600"><Ltr>{money(product.price)}</Ltr></span>
-              </button>
-            ))}
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+              {filteredProducts.map((product) => (
+                <button
+                  key={product.id}
+                  type="button"
+                  onClick={() => addProduct(product)}
+                  className="flex min-h-16 min-w-0 items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-4 text-start active:bg-brand/5 md:min-h-28 md:flex-col md:items-start"
+                >
+                  <span className="text-lg font-semibold leading-snug">{product.name}</span>
+                  <span className="shrink-0 text-lg font-medium text-gray-600"><Ltr>{money(product.price)}</Ltr></span>
+                </button>
+              ))}
+            </div>
           </div>
         </section>
 

@@ -81,6 +81,7 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   await expect(page.getByTestId('kds-login-form')).toBeVisible();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Kitchen Display');
   await expect(page.getByText('Sign in with your kitchen staff account')).toBeVisible();
+  await page.getByTestId('kds-login-email-tab').click();
   await expect(page.getByText('Email', { exact: true })).toBeVisible();
   await expect(page.getByText('Password', { exact: true })).toBeVisible();
   await expect(page.getByText('Keep me logged in')).toBeVisible();
@@ -177,6 +178,7 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     await expect(page.getByTestId('kds-login-form')).toBeVisible();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Кухонный дисплей');
     await expect(page.getByText('Войдите с аккаунтом сотрудника кухни')).toBeVisible();
+    await page.getByTestId('kds-login-email-tab').click();
     await expect(page.getByText('Эл. почта', { exact: true })).toBeVisible();
     await expect(page.getByText('Пароль', { exact: true })).toBeVisible();
     await expect(page.getByText('Не выходить из системы')).toBeVisible();

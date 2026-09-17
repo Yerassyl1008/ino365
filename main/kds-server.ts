@@ -7,13 +7,13 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { closeServerResources, createShutdownCancellationError, installHttpShutdownTracking } from './shutdown';
-import { databaseMaintenanceMiddleware, getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isDatabaseMaintenanceActive, isKdsStationItemAllowed, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, activeKitchenOrderIdsSql, projectKdsItem, projectKdsOrder } from './db';
+import { databaseMaintenanceMiddleware, getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isDatabaseMaintenanceActive, isKdsStationItemAllowed, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, activeKitchenOrderIdsSql, projectKdsItem, projectKdsOrder, verifyPin } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { getJWTSecret, parseCategoryIds } from './routes/auth';
 import { rateLimit, authRateLimit, staticRouteRateLimit, corsOptions, isTokenRevoked, isTokenStale, revokeToken } from './middleware/security';
 import { buildCspHeader } from './csp';
 import { resolveContainedPath } from './lib/path-containment';
-import { ROLE_ACCESS, hasRole } from '../shared/role-permissions';
+import { PIN_LOGIN_ROLES, ROLE_ACCESS, hasRole } from '../shared/role-permissions';
 
 let kdsServer: http.Server | null = null;
 let kdsWss: WebSocketServer | null = null;
@@ -35,6 +35,44 @@ type KdsRequestUser = {
 
 function categoryIdsForRole(role: string, categoryIds: string | null): string[] {
   return hasRole(role, ROLE_ACCESS.ownerManager) ? [] : parseCategoryIds(categoryIds);
+}
+
+function issueKdsSession(res: Response, user: any): void {
+  if (!hasRole(user.role, ROLE_ACCESS.kitchen)) {
+    res.status(403).json({ error: 'Access denied. Only kitchen staff allowed.' });
+    return;
+  }
+
+  const db = getDatabase();
+  const stationIds = getUserKdsStationIds(db, user.id);
+  const stationAssignmentsConfigured = hasUserKdsStationAssignments(db, user.id);
+  if (!stationIds || stationAssignmentsConfigured === null) {
+    res.status(500).json({ error: 'Could not load station permissions' });
+    return;
+  }
+  if (stationAssignmentsConfigured && stationIds.length === 0) {
+    res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
+    return;
+  }
+
+  const token = jwt.sign(
+    { userId: user.id, email: user.email, role: user.role, jti: uuidv4() },
+    getJWTSecret(),
+    { expiresIn: '24h' },
+  );
+
+  res.json({
+    access_token: token,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      category_ids: categoryIdsForRole(user.role, user.category_ids),
+      station_ids: stationIds,
+      station_assignments_configured: stationAssignmentsConfigured,
+    },
+  });
 }
 
 export function isKdsServerRunning(): boolean {
@@ -198,40 +236,43 @@ export function startKdsServer(): Promise<void> {
         const bcrypt = require('bcryptjs');
 
         const user = db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email) as any;
-        if (!user || !bcrypt.compareSync(password, user.password)) {
+        let passwordMatches = false;
+        if (user) {
+          try {
+            passwordMatches = bcrypt.compareSync(password, user.password);
+          } catch {
+            passwordMatches = false;
+          }
+        }
+        if (!user || !passwordMatches) {
           return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        // Only allow chef, manager, owner roles
-        if (!hasRole(user.role, ROLE_ACCESS.kitchen)) {
-          return res.status(403).json({ error: 'Access denied. Only kitchen staff allowed.' });
+        issueKdsSession(res, user);
+      } catch (error: any) {
+        console.error("[API] Internal error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    });
+
+    app.post('/api/auth/pin-login', authRateLimit(), (req: Request, res: Response) => {
+      try {
+        const pin = String(req.body?.pin ?? '');
+        if (!/^\d{4,6}$/.test(pin)) {
+          return res.status(400).json({ error: 'PIN must be 4-6 numeric digits' });
         }
 
-        const stationIds = getUserKdsStationIds(db, user.id);
-        const stationAssignmentsConfigured = hasUserKdsStationAssignments(db, user.id);
-        if (!stationIds || stationAssignmentsConfigured === null) return res.status(500).json({ error: 'Could not load station permissions' });
-        if (stationAssignmentsConfigured && stationIds.length === 0) {
-          return res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
+        const db = getDatabase();
+        const pinPlaceholders = PIN_LOGIN_ROLES.map(() => '?').join(', ');
+        const candidates = db.prepare(
+          `SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN (${pinPlaceholders})`,
+        ).all(...PIN_LOGIN_ROLES) as any[];
+        const matches = candidates.filter((user) => verifyPin(user.pin_hash, pin));
+        if (matches.length !== 1) {
+          return res.status(401).json({ error: 'Invalid PIN' });
         }
 
-        const token = jwt.sign(
-          { userId: user.id, email: user.email, role: user.role, jti: uuidv4() },
-          getJWTSecret(),
-          { expiresIn: '24h' }
-        );
-
-        res.json({
-          access_token: token,
-          user: {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            category_ids: categoryIdsForRole(user.role, user.category_ids),
-            station_ids: stationIds,
-            station_assignments_configured: stationAssignmentsConfigured,
-          },
-        });
+        issueKdsSession(res, matches[0]);
       } catch (error: any) {
         console.error("[API] Internal error:", error);
         res.status(500).json({ error: "Internal server error" });

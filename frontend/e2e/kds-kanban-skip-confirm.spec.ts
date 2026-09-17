@@ -30,6 +30,7 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   await page.goto(`${E2E_KDS_BASE_URL}/kds-standalone`);
   await expect(page.getByTestId('kds-login-form').or(page.getByTestId('kds-workspace'))).toBeVisible();
   if (await page.getByTestId('kds-login-form').isVisible()) {
+    await page.getByTestId('kds-login-email-tab').click();
     await page.getByTestId('kds-login-email').fill('manager@flo.local');
     await page.getByTestId('kds-login-password').fill('E2ePass123!');
     await page.getByTestId('kds-login-submit').click();

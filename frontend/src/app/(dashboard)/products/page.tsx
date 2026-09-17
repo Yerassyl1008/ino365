@@ -10,6 +10,7 @@ import type { Product, Category, AddonGroup, Ingredient } from '@/lib/types';
 import TagBadge, { tagLabel } from '@/components/pos/DietaryBadge';
 import { parseDbTimestamp } from '@/lib/utils';
 import ImageUploader from '@/components/products/ImageUploader';
+import { PdfMenuImportButton } from '@/components/products/PdfMenuImportModal';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useConfirm } from '@/hooks/use-confirm';
@@ -566,6 +567,7 @@ export default function ProductsPage() {
             <Button variant="outline" onClick={() => openCsvModal('products')}>
               <FileSpreadsheet size={16} className="me-1" /> CSV
             </Button>
+            {isOwnerOrManager && <PdfMenuImportButton onImported={fetchData} />}
             <Button onClick={openCreate}>
               <Plus size={16} className="me-1" /> {t('addProduct')}
             </Button>
@@ -1018,6 +1020,7 @@ export default function ProductsPage() {
             <Button variant="outline" onClick={() => openCsvModal('categories')}>
               <FileSpreadsheet size={16} className="me-1" /> CSV
             </Button>
+            {isOwnerOrManager && <PdfMenuImportButton onImported={fetchData} />}
             <Button onClick={() => { resetCategoryForm(); setShowForm(true); }}>
               <Plus size={16} className="me-1" /> {t('addCategory')}
             </Button>

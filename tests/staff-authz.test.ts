@@ -123,10 +123,17 @@ async function main() {
   }
 
   result = await request(app).post('/api/staff').set(managerAuth).send({
+    name: 'PIN only server', role: 'server', pin: '8642',
+  });
+  assertEqual(result.status, 201, 'staff can be created with PIN only');
+  assertEqual(result.body.staff.email, null, 'PIN-only create stores a null email');
+  assertEqual(result.body.staff.has_pin, 1, 'PIN-only create sets has_pin');
+
+  result = await request(app).post('/api/staff').set(managerAuth).send({
     name: 'Missing email server', password: 'StrongPass1', role: 'server',
   });
-  assertEqual(result.status, 400, 'staff creation requires email');
-  assertEqual(result.body.error, 'name, email, password, and role are required', 'missing email returns a clear validation error');
+  assertEqual(result.status, 201, 'staff creation allows omitting email when a password is set');
+  assertEqual(result.body.staff.email, null, 'omitted email is stored as null');
 
   result = await request(app).post('/api/staff').set(managerAuth).send({
     name: 'Invalid email server', email: 'not-an-email', password: 'StrongPass1', role: 'server',
@@ -141,8 +148,8 @@ async function main() {
   assertEqual(result.body.staff.email, 'mixed.server@test.local', 'created staff email is stored normalized');
 
   result = await request(app).put(`/api/staff/${managerCreated.server}`).set(managerAuth).send({ email: '   ' });
-  assertEqual(result.status, 400, 'staff update rejects blank email');
-  assertEqual(result.body.error, 'email is required', 'blank email update returns a clear validation error');
+  assertEqual(result.status, 200, 'staff update can clear email');
+  assertEqual(result.body.staff.email, null, 'blank email update stores null');
 
   result = await request(app).post('/api/staff').set(managerAuth).send({
     name: 'Pinned cashier', email: 'pinned-cashier@test.local', password: 'StrongPass1', role: 'cashier', pin: '2468',
@@ -158,7 +165,8 @@ async function main() {
   result = await request(app).post('/api/staff').set(ownerAuth).send({
     name: 'Pinned chef', email: 'pinned-chef@test.local', password: 'StrongPass1', role: 'chef', pin: '1357',
   });
-  assertEqual(result.status, 400, 'chef role rejects a PIN');
+  assertEqual(result.status, 201, 'chef role can be created with a PIN');
+  assertEqual(result.body.staff.has_pin, 1, 'chef staff response exposes has_pin');
 
   console.log('\n── PIN policy ─────────────────────────────────────────────────');
   for (const pin of ['abcd', '123', '1234567']) {
@@ -180,7 +188,7 @@ async function main() {
   assertEqual(result.status, 201, 'owner can create a manager used for chef demotion');
   result = await request(app).put(`/api/staff/${result.body.staff.id}`).set(ownerAuth).send({ role: 'chef' });
   assertEqual(result.status, 200, 'owner can demote a manager to chef');
-  assertEqual(result.body.staff.has_pin, 0, 'demoting to chef clears has_pin');
+  assertEqual(result.body.staff.has_pin, 1, 'demoting to chef keeps has_pin');
 
   const originalPinHash = (db.prepare('SELECT pin_hash FROM users WHERE id = ?').get('manager-145') as any).pin_hash;
   result = await request(app).put('/api/staff/manager-145').set(ownerAuth).send({ name: 'Manager PIN preserved' });

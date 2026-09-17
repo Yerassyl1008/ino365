@@ -32,8 +32,8 @@ const ORDER_STATUS = ['owner', 'manager', 'cashier', 'server', 'chef'] as const 
 const ALL_STAFF = ['owner', 'manager', 'cashier', 'server', 'chef'] as const satisfies readonly Role[];
 const SERVER_APP = ['server', 'manager', 'owner'] as const satisfies readonly Role[];
 export const OPERATIONAL_ROLES = ['cashier', 'server', 'chef'] as const satisfies readonly Role[];
-/** Floor PIN login and personal shifts — chef uses KDS, not a waiter PIN. */
-export const PIN_LOGIN_ROLES = ['owner', 'manager', 'cashier', 'server'] as const satisfies readonly Role[];
+/** Floor PIN login — every staff role can sign in with a 4–6 digit PIN. */
+export const PIN_LOGIN_ROLES = ['owner', 'manager', 'cashier', 'server', 'chef'] as const satisfies readonly Role[];
 
 /** Named role groups used by backend middleware and frontend surface gates. */
 export const ROLE_ACCESS = {

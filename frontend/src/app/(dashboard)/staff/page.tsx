@@ -120,7 +120,7 @@ export default function StaffPage() {
       if (editingStaff) {
         await api.put(`/staff/${editingStaff.id}`, {
           name: form.name,
-          email: form.email,
+          email: form.email.trim(),
           role: form.role,
           ...(form.password ? { password: form.password } : {}),
           ...(form.pin ? { pin: form.pin } : {}),
@@ -129,9 +129,9 @@ export default function StaffPage() {
       } else {
         await api.post('/staff', {
           name: form.name,
-          email: form.email,
-          password: form.password,
           role: form.role,
+          ...(form.email.trim() ? { email: form.email.trim() } : {}),
+          ...(form.password ? { password: form.password } : {}),
           ...(form.pin ? { pin: form.pin } : {}),
         });
         toast.success(t('addedToast'));
@@ -251,12 +251,11 @@ export default function StaffPage() {
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required
               />
               <input
-                type="email" placeholder={tAuth('email')} value={form.email}
+                type="email" placeholder={t('emailPlaceholder')} value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
                 autoComplete="email"
                 dir="ltr"
-                required
               />
               <div className="relative">
                 <input
@@ -264,7 +263,6 @@ export default function StaffPage() {
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
-                  required={!editingStaff}
                 />
                 <button type="button" aria-label="Toggle password visibility" title="Toggle password visibility" onClick={() => setShowPassword(!showPassword)} className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -275,12 +273,11 @@ export default function StaffPage() {
                 value={form.confirmPassword}
                 onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
-                required={!editingStaff || Boolean(form.password)}
+                required={Boolean(form.password)}
               />
               <select
                 value={form.role} onChange={(e) => {
-                  const role = e.target.value;
-                  setForm({ ...form, role, pin: role === 'chef' ? '' : form.pin });
+                  setForm({ ...form, role: e.target.value });
                 }}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
               >
@@ -288,27 +285,25 @@ export default function StaffPage() {
                   <option key={r} value={r} disabled={editingLastActiveOwner && r !== 'owner'}>{roleLabel(r, t)}</option>
                 ))}
               </select>
-              {form.role !== 'chef' && (
-                <div>
-                  <div className="relative">
-                    <input
-                      type={showPin ? 'text' : 'password'} placeholder={editingStaff ? t('pinPlaceholderEdit') : t('pinPlaceholderAdd')}
-                      value={form.pin}
-                      onChange={(e) => setForm({ ...form, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })}
-                      className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
-                      maxLength={6}
-                      pattern="[0-9]*"
-                      inputMode="numeric"
-                    />
-                    <button type="button" aria-label="Toggle PIN visibility" title="Toggle PIN visibility" onClick={() => setShowPin(!showPin)} className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                      {showPin ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {form.role === 'owner' || form.role === 'manager' ? t('pinHintManager') : t('pinHint')}
-                  </p>
+              <div>
+                <div className="relative">
+                  <input
+                    type={showPin ? 'text' : 'password'} placeholder={editingStaff ? t('pinPlaceholderEdit') : t('pinPlaceholderAdd')}
+                    value={form.pin}
+                    onChange={(e) => setForm({ ...form, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                    className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                    maxLength={6}
+                    pattern="[0-9]*"
+                    inputMode="numeric"
+                  />
+                  <button type="button" aria-label="Toggle PIN visibility" title="Toggle PIN visibility" onClick={() => setShowPin(!showPin)} className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    {showPin ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
                 </div>
-              )}
+                <p className="text-xs text-muted-foreground mt-1">
+                  {form.role === 'chef' ? t('pinHintChef') : form.role === 'owner' || form.role === 'manager' ? t('pinHintManager') : t('pinHint')}
+                </p>
+              </div>
               <Button type="submit" className="w-full">{editingStaff ? t('updateButton') : t('addButton')}</Button>
             </form>
           </div>

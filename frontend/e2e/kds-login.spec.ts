@@ -6,6 +6,7 @@ test('KDS standalone logs in and restores its session', async ({ page }) => {
   page.on('pageerror', (error) => pageErrors.push(error));
   await page.goto(`${E2E_KDS_BASE_URL}/kds-standalone`);
   await expect(page.getByTestId('kds-login-form')).toBeVisible();
+  await page.getByTestId('kds-login-email-tab').click();
   await page.getByTestId('kds-login-email').fill('manager@flo.local');
   await page.getByTestId('kds-login-password').fill('E2ePass123!');
   await page.getByTestId('kds-login-submit').click();

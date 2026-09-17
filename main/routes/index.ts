@@ -28,6 +28,7 @@ import { printerRoutes } from './printers';
 import { databaseRoutes } from './database';
 import { databaseToolsRoutes } from './database-tools';
 import { menuCsvRoutes } from './menu-csv';
+import { menuPdfRoutes } from './menu-pdf';
 import { taxPackRoutes } from './tax-packs';
 import { heldOrderRoutes } from './held-orders';
 import { printTemplateRoutes } from './print-templates';
@@ -108,6 +109,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/db', databaseRoutes);
   app.use('/api/db-tools', databaseToolsRoutes);
   app.use('/api/menu-csv', menuCsvRoutes);
+  app.use('/api/menu-pdf', menuPdfRoutes);
   app.use('/api/tax-packs', taxPackRoutes);
   app.use('/api/held-orders', heldOrderRoutes);
   app.use('/api/print-templates', printTemplateRoutes);

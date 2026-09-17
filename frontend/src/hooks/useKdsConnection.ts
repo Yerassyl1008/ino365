@@ -139,6 +139,7 @@ interface WsMessage {
 
 export interface UseKdsConnectionEndpoints {
   login?: string;
+  pinLogin?: string;
   me?: string;
   logout?: string;
   orders?: string;
@@ -173,12 +174,14 @@ export interface UseKdsConnectionResult {
   setLoginPassword: (v: string) => void;
   setRememberMe: (v: boolean) => void;
   handleLogin: (e: React.FormEvent) => Promise<void>;
+  handlePinLogin: (e: React.FormEvent, pin: string) => Promise<void>;
   handleLogout: () => Promise<void>;
   updateItemStatus: (itemId: number, status: KitchenStatus, opts?: { silent?: boolean; expectedStatus?: KitchenStatus }) => Promise<boolean>;
   ConfirmDialog: ReactNode;
 }
 
 const LOGIN_ENDPOINT = '/auth/login';
+const PIN_LOGIN_ENDPOINT = '/auth/pin-login';
 const ME_ENDPOINT = '/auth/me';
 const ORDERS_ENDPOINT = '/kitchen/orders';
 const ITEM_STATUS_ENDPOINT = '/order-items/:itemId/status';
@@ -199,6 +202,7 @@ function markKdsAuthBlocked(): void {
 export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnectionResult {
   const { api, endpoints } = options;
   const loginPath = endpoints?.login ?? LOGIN_ENDPOINT;
+  const pinLoginPath = endpoints?.pinLogin ?? PIN_LOGIN_ENDPOINT;
   const mePath = endpoints?.me ?? ME_ENDPOINT;
   const logoutPath = endpoints?.logout ?? '/auth/logout';
   const ordersPath = endpoints?.orders ?? ORDERS_ENDPOINT;
@@ -632,6 +636,48 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     [loginEmail, loginPassword, rememberMe, loginPath, api, t, tryWebSocket],
   );
 
+  const handlePinLogin = useCallback(
+    async (e: React.FormEvent, pin: string) => {
+      e.preventDefault();
+      if (pin.length < 4) return;
+      clearKdsAuthBlocked();
+      setLoginError('');
+      sessionGenerationRef.current += 1;
+      const generation = sessionGenerationRef.current;
+      setLoginLoading(true);
+      setLoading(true);
+
+      try {
+        const { data } = await api.post(pinLoginPath, {
+          pin,
+          rememberMe,
+        });
+
+        if (generation !== sessionGenerationRef.current) return;
+        const token = data.access_token ?? data.token;
+        const loggedInUser: KdsUser = {
+          id: data.user.id,
+          name: data.user.name,
+          role: data.user.role,
+          token,
+        };
+
+        setUser(loggedInUser);
+        window.localStorage.setItem('token', token);
+        tryWebSocket(token);
+      } catch {
+        if (generation !== sessionGenerationRef.current) return;
+        setLoginError(t('loginFailed'));
+      } finally {
+        if (generation === sessionGenerationRef.current) {
+          setLoginLoading(false);
+          setLoading(false);
+        }
+      }
+    },
+    [rememberMe, pinLoginPath, api, t, tryWebSocket],
+  );
+
   const handleLogout = useCallback(async () => {
     if (!await confirm(tNav('confirmLogout'))) return;
     sessionGenerationRef.current += 1;
@@ -757,6 +803,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     setLoginPassword,
     setRememberMe,
     handleLogin,
+    handlePinLogin,
     handleLogout,
     updateItemStatus,
     ConfirmDialog,

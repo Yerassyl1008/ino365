@@ -138,6 +138,29 @@ async function run() {
     assert(chefLogin.status === 200, 'Chef login succeeds on KDS API');
     assert(!!chefLogin.body.access_token, 'Chef login returns access_token');
 
+    db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(bcrypt.hashSync('2468', 10), 'user-chef-1');
+    const chefPinLogin = await request(`http://127.0.0.1:${port}`)
+      .post('/api/auth/pin-login')
+      .send({ pin: '2468' });
+    assert(chefPinLogin.status === 200, 'Chef PIN login succeeds on KDS API');
+    assert(chefPinLogin.body.user.role === 'chef', 'Chef PIN login returns the chef role');
+
+    db.prepare(`
+      INSERT INTO users (id, name, email, password, role, pin_hash, is_active)
+      VALUES ('user-chef-pin-only', 'PIN Chef', NULL, ?, 'chef', ?, 1)
+    `).run(hashedPass, bcrypt.hashSync('9753', 10));
+    const pinOnlyChefLogin = await request(`http://127.0.0.1:${port}`)
+      .post('/api/auth/pin-login')
+      .send({ pin: '9753' });
+    assert(pinOnlyChefLogin.status === 200, 'PIN-only chef without email can log in to KDS');
+    assert(pinOnlyChefLogin.body.user.email == null, 'PIN-only chef login payload has no email');
+
+    db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(bcrypt.hashSync('1111', 10), 'user-server-1');
+    const waiterPinOnKds = await request(`http://127.0.0.1:${port}`)
+      .post('/api/auth/pin-login')
+      .send({ pin: '1111' });
+    assert(waiterPinOnKds.status === 403, 'Waiter PIN cannot access KDS');
+
     let token = chefLogin.body.access_token;
 
     const standaloneLogout = await request(`http://127.0.0.1:${port}`)

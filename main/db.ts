@@ -4569,6 +4569,9 @@ function createSchema(): void {
     -- ── Users (authentication + roles) ──────────────────────────────────
     -- Roles: ${ROLE_KEYS.join(', ')}
     -- KDS is operated by the chef role.
+    -- email is UNIQUE and nullable so PIN-only staff need not invent an address
+    -- (SQLite UNIQUE allows multiple NULLs). password is NOT NULL; PIN-only
+    -- accounts store an unusable random hash.
 
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
