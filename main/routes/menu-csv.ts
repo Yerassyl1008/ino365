@@ -345,6 +345,7 @@ router.post('/import/categories', requireRole(...ROLE_ACCESS.ownerManager), (req
     if (!rows.length) return res.status(400).json({ error: 'CSV has no data rows' });
 
     const db = getDatabase();
+    const catalogScope = getSettingValue('business_type') === 'retail' ? 'retail' : 'restaurant';
     let created = 0, updated = 0, reactivated = 0, skipped = 0, failed = 0;
     const errors: string[] = [];
 
@@ -366,10 +367,10 @@ router.post('/import/categories', requireRole(...ROLE_ACCESS.ownerManager), (req
 
       const slug = r.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
       db.prepare(
-        `INSERT INTO categories (id, name, slug, description, color, icon, sort_order, is_active, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+        `INSERT INTO categories (id, name, slug, description, color, icon, sort_order, is_active, business_scope, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
       ).run(uuidv4(), r.name, slug, r.description || null, r.color || null, r.icon || null,
-        sortOrder.value, now(), now());
+        sortOrder.value, catalogScope, now(), now());
       created++;
     } })();
 

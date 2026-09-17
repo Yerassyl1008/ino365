@@ -95,13 +95,13 @@ export default function ProductGrid({
               }
             }}
             placeholder={t('searchProducts')}
-            className="w-full ps-9 pe-4 py-2 bg-card border border-border rounded-xl focus:border-brand outline-none transition-colors text-sm"
+            className="w-full ps-9 pe-4 py-2.5 bg-card border border-border rounded-xl focus:border-brand outline-none transition-colors text-base md:text-sm"
           />
         </div>
-        <div className="flex flex-wrap gap-2 pb-1">
+        <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
           <button
             onClick={() => setSelectedCategory(null)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+            className={`shrink-0 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
               !selectedCategory ? 'bg-brand text-white' : 'bg-card text-foreground border border-border hover:bg-muted'
             }`}
           >
@@ -114,7 +114,7 @@ export default function ProductGrid({
               <button
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                className={`shrink-0 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
                   isSelected
                     ? colorClasses
                       ? `${colorClasses.activeBg} ${colorClasses.activeText}`
@@ -132,10 +132,10 @@ export default function ProductGrid({
       </div>
 
       <div className="flex-1 overflow-y-auto pb-20 md:pb-0">
-        <div className={`grid gap-3 ${
-          sidebarOpen 
-            ? 'grid-cols-4' 
-            : 'grid-cols-5'
+        <div className={`grid gap-3 grid-cols-2 sm:grid-cols-3 ${
+          sidebarOpen
+            ? 'md:grid-cols-3 lg:grid-cols-4'
+            : 'md:grid-cols-4 lg:grid-cols-5'
         }`}>
           {filtered.map((product) => {
             const inCartQty = cartQuantities.get(product.id) || 0;

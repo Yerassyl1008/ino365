@@ -143,7 +143,7 @@ describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
     const db = getDatabase();
     seedSetupProfile(db, 'demo', 'finedine', 'ru', 'RU');
 
-    assert.equal(db.prepare("SELECT name FROM categories WHERE id = 'cat-demo-starters'").get().name, 'Закуски');
+    assert.equal(db.prepare("SELECT name FROM categories WHERE id = 'cat-demo-grill'").get().name, 'Шашлык');
     assert.equal(db.prepare("SELECT name FROM products WHERE id = 'prod-demo-plov'").get().name, 'Плов');
     assert.equal(db.prepare("SELECT name FROM users WHERE id = 'user-demo-manager'").get().name, 'Демо-менеджер');
 

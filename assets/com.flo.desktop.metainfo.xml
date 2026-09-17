@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
   <id>com.flo.desktop</id>
-  <name>Flo Cafe</name>
-  <summary>Free, open-source POS for cafes and restaurants</summary>
+  <name>KorgenKassa</name>
+  <summary>POS for cafes, restaurants, and shops</summary>
   <developer id="com.flo">
     <name>FreeOpenSourcePOS</name>
   </developer>
@@ -12,7 +12,7 @@
 
   <description>
     <p>
-      Flo Cafe is a free, open-source, offline-first Point of Sale system built
+      KorgenKassa is an offline-first Point of Sale system built
       for cafes, restaurants, cloud kitchens, and food businesses. It runs
       entirely on your own machine with no internet required.
     </p>

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isKdsStationItemAllowed, parseItemJson, attachEffectiveAddons, isVoidedItemKdsVisible, projectKdsItem, projectKdsOrder } from '../db';
+import { getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isKdsStationItemAllowed, parseItemJson, attachEffectiveAddons, isVoidedItemKdsVisible, activeKitchenOrderIdsSql, projectKdsItem, projectKdsOrder } from '../db';
 import { requireRole, requireKdsEnabled } from '../middleware/security';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { parseCategoryIds } from './auth';
@@ -8,18 +8,6 @@ const router = Router();
 
 router.use(requireRole(...ROLE_ACCESS.kitchen));
 router.use(requireKdsEnabled);
-
-// Active kitchen orders — the old `OR EXISTS` form forced the planner to
-// SCAN orders and run a correlated subquery per row. The UNION form lets
-// each branch hit an index: status-in check uses `idx_orders_status`, and
-// the live-items branch uses `idx_order_items_order`. #208
-const ACTIVE_KITCHEN_ORDER_IDS_SQL = `
-  SELECT id FROM orders WHERE status IN ('pending','preparing','ready','served')
-  UNION
-  SELECT o.id FROM orders o
-  JOIN order_items oi ON oi.order_id = o.id AND oi.status NOT IN ('served','cancelled')
-  WHERE o.status NOT IN ('pending','preparing','ready','served','cancelled')
-`;
 
 // GET /api/kitchen/orders — returns active orders with items for KDS display
 router.get('/orders', (req: Request, res: Response) => {
@@ -59,7 +47,7 @@ router.get('/orders', (req: Request, res: Response) => {
     const orders = db.prepare(`
       SELECT o.*, t.kitchen_station_id
       FROM orders o LEFT JOIN tables t ON t.id = o.table_id
-      WHERE o.id IN (${ACTIVE_KITCHEN_ORDER_IDS_SQL})${stationFilter}
+      WHERE o.id IN (${activeKitchenOrderIdsSql()})${stationFilter}
       ORDER BY o.created_at ASC
     `).all(...stationIds, ...stationRoutingCategoryIds) as any[];
 

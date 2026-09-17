@@ -388,6 +388,9 @@ const INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
 
   'kds.emptyColumn', // em dash
 
+  'dashboard.colPercent', // percent sign column header
+  'dashboard.sharePercent', // pure format: {percent}%
+
   'nav.kds', // technical acronym
 
   'nav.whatsapp', // product name

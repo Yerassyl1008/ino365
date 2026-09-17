@@ -24,6 +24,21 @@ interface Props {
   onEditItem?: (item: CartItem) => void;
   variant?: 'sidebar' | 'drawer';
   existingOrder?: Order | null;
+  advancingItemId?: number | null;
+  onAdvanceKitchenItem?: (item: OrderItem) => void;
+}
+
+function nextKitchenItemStatus(status: string): 'preparing' | 'ready' | 'served' | null {
+  if (status === 'pending') return 'preparing';
+  if (status === 'preparing') return 'ready';
+  if (status === 'ready') return 'served';
+  return null;
+}
+
+function kitchenAdvanceLabelKey(next: 'preparing' | 'ready' | 'served'): 'markPreparing' | 'markReady' | 'markServed' {
+  if (next === 'preparing') return 'markPreparing';
+  if (next === 'ready') return 'markReady';
+  return 'markServed';
 }
 
 const orderTypeIcons = {
@@ -33,7 +48,7 @@ const orderTypeIcons = {
   online: Globe,
 };
 
-export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem, variant = 'sidebar', existingOrder }: Props) {
+export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem, variant = 'sidebar', existingOrder, advancingItemId, onAdvanceKitchenItem }: Props) {
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
   const { currentTenant } = useAuthStore();
@@ -107,6 +122,45 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
           </div>
         )}
 
+        {cart.orderType === 'dine_in' && (
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-1">
+              {Array.from({ length: cart.guestCount }, (_, index) => index + 1).map((seat) => (
+                <button
+                  key={seat}
+                  type="button"
+                  onClick={() => cart.setCurrentGuestSeat(seat)}
+                  className={`min-h-9 rounded-md px-2 text-xs font-medium ${
+                    cart.currentGuestSeat === seat ? 'bg-brand text-white' : 'bg-muted text-muted-foreground'
+                  }`}
+                >
+                  {t('guestSeat', { seat })}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-1">
+              <button
+                type="button"
+                onClick={() => cart.setCurrentCourse(1)}
+                className={`min-h-9 flex-1 rounded-md text-xs font-medium ${
+                  cart.currentCourse === 1 ? 'bg-brand text-white' : 'bg-muted text-muted-foreground'
+                }`}
+              >
+                {t('courseFirst')}
+              </button>
+              <button
+                type="button"
+                onClick={() => cart.setCurrentCourse(2)}
+                className={`min-h-9 flex-1 rounded-md text-xs font-medium ${
+                  cart.currentCourse === 2 ? 'bg-brand text-white' : 'bg-muted text-muted-foreground'
+                }`}
+              >
+                {t('courseSecond')}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Delivery address — shown inline when delivery is selected */}
         {cart.orderType === 'delivery' && (
           <div className="flex items-center gap-2">
@@ -152,12 +206,28 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
           <div className="mb-3 pb-3 border-b border-dashed border-border">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{t('alreadyOrdered')}</p>
             <div className="space-y-1.5">
-              {existingOrder.items.filter((i: OrderItem) => i.status !== 'cancelled').map((item: OrderItem) => (
-                <div key={item.id} className="flex justify-between items-center">
-                  <span className="text-xs text-muted-foreground">{item.quantity}× {item.product_name}</span>
-                  <span className="text-xs text-gray-400">{fmt(Number(item.total))}</span>
-                </div>
-              ))}
+              {existingOrder.items.filter((i: OrderItem) => i.status !== 'cancelled').map((item: OrderItem) => {
+                const next = nextKitchenItemStatus(item.status);
+                return (
+                  <div key={item.id} className="flex items-center gap-2 rounded-lg bg-muted/60 px-2 py-1.5">
+                    <span className="min-w-0 flex-1 text-xs text-muted-foreground">
+                      {item.quantity}× {item.product_name}
+                    </span>
+                    {next && onAdvanceKitchenItem ? (
+                      <button
+                        type="button"
+                        disabled={advancingItemId === item.id}
+                        onClick={() => onAdvanceKitchenItem(item)}
+                        className="h-11 shrink-0 rounded-md bg-brand px-3 text-xs font-semibold text-white disabled:opacity-50"
+                      >
+                        {t(kitchenAdvanceLabelKey(next))}
+                      </button>
+                    ) : (
+                      <span className="text-xs font-medium text-blue-600">{fmt(Number(item.total))}</span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -204,6 +274,11 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                   )}
                   {item.special_instructions && (
                     <p className="text-xs text-gray-400 italic mt-0.5 break-words">{item.special_instructions}</p>
+                  )}
+                  {cart.orderType === 'dine_in' && (
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      {t('guestSeat', { seat: item.guest_seat || 1 })} · {t('course', { course: item.course || 1 })}
+                    </p>
                   )}
                   <p className="text-sm text-muted-foreground">
                     {fmt(Number(item.product.price))}

@@ -115,6 +115,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
     cart.customerId,
     undefined,
     previewDiscount,
+    cart.orderType,
   );
 
   const [payments, setPayments] = useState<Payment[]>(
@@ -186,6 +187,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
       taxAmount: tax.tax_amount,
       taxBreakdown: tax.tax_breakdown,
       packagingCharge: tax.packaging_charge,
+      serviceCharge: tax.service_charge,
       roundOff: tax.round_off,
       total: tax.total,
     };
@@ -401,6 +403,12 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
                       <div className="flex justify-between text-xs text-slate-300">
                         <span>{t('packaging')}</span>
                         <span>{currencyFmt(preview.packagingCharge)}</span>
+                      </div>
+                    )}
+                    {preview.serviceCharge > 0 && (
+                      <div className="flex justify-between text-xs text-slate-300">
+                        <span>{t('serviceCharge')}</span>
+                        <span>{currencyFmt(preview.serviceCharge)}</span>
                       </div>
                     )}
                     {preview.roundOff !== 0 && (

@@ -58,7 +58,11 @@ export function buildKotPrintData(order: any, items: any[], stationName: string)
       addons: (Array.isArray(item?.addons) ? item.addons : []).map((addon: any) => ({
         name: String(addon?.name ?? ''),
       })),
-      specialInstructions: String(item?.special_instructions ?? ''),
+      specialInstructions: [
+        Number(item?.guest_seat) > 1 ? `Guest ${item.guest_seat}` : '',
+        Number(item?.course) > 1 ? `Course ${item.course}` : '',
+        String(item?.special_instructions ?? ''),
+      ].filter(Boolean).join(' · '),
     })),
   };
 }

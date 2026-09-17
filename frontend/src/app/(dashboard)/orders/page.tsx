@@ -18,7 +18,7 @@ import { usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useHeldOrdersStore } from '@/store/held-orders';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useTranslations, useLocale, type AppConfig } from 'use-intl';
@@ -122,6 +122,7 @@ export default function OrdersPage() {
   const { printBill } = usePrinterStore();
   const heldOrdersStore = useHeldOrdersStore();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const cartStore = useCartStore();
   const { setTablesRequired, autoPrintBill, printerUseUnicode, printerArabicShaping } = usePosSettingsStore();
   const tOrders = useTranslations('orders');
@@ -159,6 +160,14 @@ export default function OrdersPage() {
 
   // Consolidated filter state
   const [filters, setFilters] = useState<Filters>({ search: '', table: '', type: '', status: '' });
+
+  useEffect(() => {
+    const status = searchParams.get('status');
+    if (status === 'cancelled' || status === 'completed' || status === 'active') {
+      setTabFilter('all');
+      setFilters((prev) => (prev.status === status ? prev : { ...prev, status }));
+    }
+  }, [searchParams]);
 
   // Consolidated cancel modal state
   const [cancelModal, setCancelModal] = useState<CancelModal | null>(null);

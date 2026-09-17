@@ -128,6 +128,9 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Server App');
   await expect(page.getByText('Tableside ordering for service staff')).toBeVisible();
+  await expect(page.getByText('Enter your 4–6 digit PIN. The owner sets it in Settings → Tableside ordering.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sign in with PIN' })).toBeVisible();
+  await page.getByRole('button', { name: 'Email' }).click();
   await expect(page.getByPlaceholder('server@flo.local')).toBeVisible();
   await expect(page.getByPlaceholder('Password')).toBeVisible();
   await expect(page.getByText('Keep me logged in')).toBeVisible();
@@ -223,6 +226,9 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Приложение официанта');
     await expect(page.getByText('Приём заказов у стола для обслуживающего персонала')).toBeVisible();
+    await expect(page.getByText('Введите свой PIN из 4–6 цифр. Владелец задаёт его в Настройках → Приём заказов у столика.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Войти по PIN' })).toBeVisible();
+    await page.getByRole('button', { name: 'Почта' }).click();
     await expect(page.getByPlaceholder('server@flo.local')).toBeVisible();
     await expect(page.getByPlaceholder('Пароль')).toBeVisible();
     await expect(page.getByText('Не выходить из системы')).toBeVisible();

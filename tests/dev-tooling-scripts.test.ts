@@ -58,9 +58,13 @@ function runTest() {
     'node /Users/dev/FloCafe/dist/index.js',
     'node /Users/dev/FloCafe/dist/main/index.js',
     'node C:\\FloCafe\\dist\\main\\index.js',
+    '/Applications/KorgenKassa.app/Contents/MacOS/KorgenKassa',
     '/Applications/Flo Cafe.app/Contents/MacOS/Flo Cafe',
+    'C:\\Program Files\\KorgenKassa\\KorgenKassa.exe',
     '/usr/bin/flocafe --no-sandbox',
     'electron . --appName=flo-desktop',
+    'C:\\Users\\admin\\flocafe\\FloCafe\\node_modules\\electron\\dist\\electron.exe .',
+    '/Users/dev/FloCafe/node_modules/electron/dist/electron .',
     'node /path/to/FloCafe/dev-server.js',
     'node /path/to/FloCafe/dist/index.js',
     'com.flo.desktop.helper',
@@ -87,6 +91,8 @@ function runTest() {
     'nginx: master process',
     'postgres -D /data',
     'redis-server *:6379',
+    'C:\\Users\\admin\\other-app\\node_modules\\electron\\dist\\electron.exe .',
+    '/Users/dev/other-project/node_modules/electron/dist/electron .',
   ];
 
   for (const cmd of negativeCases) {

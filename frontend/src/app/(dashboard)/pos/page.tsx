@@ -6,10 +6,11 @@ import { useAuthStore } from '@/store/auth';
 import { useCartStore } from '@/store/cart';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { usePosSettingsStore } from '@/store/pos-settings';
+import { useRouter } from 'next/navigation';
 import { useSidebar } from '@/components/ui/sidebar';
 import toast from 'react-hot-toast';
 import { ShoppingCart, X } from 'lucide-react';
-import type { Addon, Category, Product, Table, Bill, Order, CartItem } from '@/lib/types';
+import type { Addon, Category, Product, Table, Bill, Order, OrderItem, CartItem } from '@/lib/types';
 import { useConfirm } from '@/hooks/use-confirm';
 import {
   Drawer, DrawerContent, DrawerTrigger,
@@ -34,6 +35,8 @@ import { useSupportTicketStatus } from '@/hooks/useSupportTicketStatus';
 import { useSupportDiagnosticsPreview } from '@/hooks/useSupportDiagnosticsPreview';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { resolveScannedProduct } from '@/lib/scale-barcode';
+import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
+import { getLandingPage } from '@/components/layout/AuthGuard';
 import {
   buildAppendItemsFingerprint,
   clearAppendAttempt,
@@ -70,6 +73,7 @@ interface PrepaidAttempt {
 
 export default function POSPage() {
   const { currentTenant, user } = useAuthStore();
+  const router = useRouter();
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
@@ -98,6 +102,7 @@ export default function POSPage() {
   const [showCustomerPrompt, setShowCustomerPrompt] = useState(false);
   const [showPrepaidCheckout, setShowPrepaidCheckout] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
+  const [advancingItemId, setAdvancingItemId] = useState<number | null>(null);
   const [supportError, setSupportError] = useState<{ code: string; message: string; payload: Record<string, unknown> } | null>(null);
   const [sentTicketId, setSentTicketId] = useState<string | null>(null);
   const delivery = useSupportTicketStatus(sentTicketId);
@@ -399,6 +404,21 @@ export default function POSPage() {
   }, [activeUserId]);
 
   useEffect(() => {
+    const landing = getLandingPage(currentTenant?.role, currentTenant?.business_type);
+    // Kitchen-only staff cannot operate POS; owners still can after landing on the workbench.
+    if (landing === '/kds') router.replace(landing);
+  }, [currentTenant?.role, currentTenant?.business_type, router]);
+
+  useEffect(() => {
+    if (!isRestaurant && cart.orderType === 'dine_in') {
+      cart.setOrderType('takeaway');
+    }
+  }, [isRestaurant, cart.orderType, cart.setOrderType]);
+
+  useEffect(() => {
+    if (getLandingPage(currentTenant?.role, currentTenant?.business_type) === '/kds') {
+      return;
+    }
     const fetchData = async () => {
       try {
         // 1. Fetch business settings first
@@ -432,8 +452,8 @@ export default function POSPage() {
           setTables([]);
         }
 
-        // 3. Fetch held orders conditionally
-        if (isTablesRequired) {
+        // 3. Fetch held orders only for roles that can hold a table
+        if (isTablesRequired && hasRole(currentTenant?.role, ROLE_ACCESS.sales)) {
           await heldOrders.fetchHeldOrders();
         }
       } catch {
@@ -442,7 +462,7 @@ export default function POSPage() {
     };
     fetchData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRestaurant, setBillingType, setTablesRequired, setKotPrintingEnabled]);
+  }, [isRestaurant, currentTenant?.role, setBillingType, setTablesRequired, setKotPrintingEnabled]);
 
   const handleProductClick = (product: Product) => {
     // Always open modal so user can add notes and adjust quantity
@@ -507,6 +527,8 @@ export default function POSPage() {
             ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
             : null,
           special_instructions: item.special_instructions || null,
+          guest_seat: item.guest_seat || 1,
+          course: item.course || 1,
         }));
         const specialInstructions = cart.orderNotes || undefined;
         const itemFingerprint = buildAppendItemsFingerprint(pendingOrder.id, newItems, specialInstructions);
@@ -533,7 +555,7 @@ export default function POSPage() {
         orderForKot = appendedItems.length > 0 ? { ...updatedOrder, items: appendedItems } : updatedOrder;
         if (!clearAppendAttempt(storage, itemAttempt)) throw new Error('Unable to clear append retry state');
         addItemsAttemptRef.current = null;
-        setPendingOrder(null);
+        setPendingOrder(updatedOrder);
       } else {
         const orderPayload = {
           table_id: cart.tableId,
@@ -550,6 +572,8 @@ export default function POSPage() {
               ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
               : null,
             special_instructions: item.special_instructions || null,
+          guest_seat: item.guest_seat || 1,
+          course: item.course || 1,
           })),
         };
         const orderFingerprint = JSON.stringify(orderPayload);
@@ -564,6 +588,7 @@ export default function POSPage() {
         if (!orderAttempt.order) savePostpaidAttempt({ ...orderAttempt, order: data.order as Order });
         toast.success(t('orderPlaced', { number: data.order.order_number }));
         orderForKot = data.order as Order;
+        setPendingOrder(data.order as Order);
         clearPostpaidAttempt();
       }
 
@@ -578,7 +603,7 @@ export default function POSPage() {
         }
       }
       cart.clearCart();
-      setMobileCartOpen(false);
+      setMobileCartOpen(true);
       await refreshTables();
 
       await printKotIfEnabled(orderForKot);
@@ -601,6 +626,8 @@ export default function POSPage() {
         ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
         : null,
       special_instructions: item.special_instructions || null,
+      guest_seat: item.guest_seat || 1,
+      course: item.course || 1,
     }));
     const paymentLines = payments
       .filter((p) => p.amount > 0)
@@ -800,6 +827,7 @@ export default function POSPage() {
 
   const handleSelectAvailableTable = (tableId: string, customer?: { id: number; name: string; phone: string } | null) => {
     cart.setTableId(tableId);
+    setPendingOrder(null);
     if (customer) {
       cart.setCustomer({ ...customer, email: null, visits_count: 0, total_spent: 0, last_visit_at: null, country_code: '' });
     }
@@ -891,6 +919,8 @@ export default function POSPage() {
           ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
           : null,
         special_instructions: item.special_instructions || null,
+        guest_seat: item.guest_seat || 1,
+        course: item.course || 1,
       }));
       const specialInstructions = order.special_instructions || undefined;
       const fingerprint = buildAppendItemsFingerprint(order.id, items, specialInstructions);
@@ -943,6 +973,21 @@ export default function POSPage() {
     }
   };
 
+  const handleAdvanceKitchenItem = async (item: OrderItem) => {
+    const next = item.status === 'pending' ? 'preparing' : item.status === 'preparing' ? 'ready' : item.status === 'ready' ? 'served' : null;
+    if (!next || !pendingOrder) return;
+    setAdvancingItemId(item.id);
+    try {
+      await api.patch(`/order-items/${item.id}/status`, { status: next, expected_status: item.status });
+      const { data } = await api.get(`/orders/${pendingOrder.id}`);
+      setPendingOrder(data.order);
+    } catch {
+      toast.error(t('statusUpdateFailed'));
+    } finally {
+      setAdvancingItemId(null);
+    }
+  };
+
   const cartPanelProps = {
     tables,
     currency,
@@ -951,9 +996,13 @@ export default function POSPage() {
     onShowTablePicker: () => setShowTablePicker(true),
     onEditItem: setEditingCartItem,
     existingOrder: pendingOrder,
+    advancingItemId,
+    onAdvanceKitchenItem: handleAdvanceKitchenItem,
   };
 
   const itemCount = cart.itemCount();
+  const kitchenOpenCount = (pendingOrder?.items || []).filter((item) => !['cancelled', 'voided', 'void_adjustment', 'served'].includes(item.status)).length;
+  const fabCount = itemCount + kitchenOpenCount;
 
   return (
     <>
@@ -1000,7 +1049,7 @@ export default function POSPage() {
                     try {
                       await api.post('/support-ticket', {
                         ...supportError.payload,
-                        subject: 'FloCafe printing problem',
+                        subject: 'KorgenKassa printing problem',
                         correlation_id: crypto.randomUUID(),
                         client_ticket_id: clientTicketId,
                       });
@@ -1025,7 +1074,7 @@ export default function POSPage() {
       />
 
       {/* Main content area */}
-      <div className="flex flex-1 min-h-0 overflow-hidden p-4 gap-4">
+      <div className="flex flex-1 min-h-0 overflow-hidden p-2 gap-2 md:p-4 md:gap-4">
         {/* Product Grid — full width on mobile, flex-1 on desktop */}
         <div className="flex-1 min-w-0 h-full flex flex-col">
           <ProductGrid
@@ -1052,9 +1101,9 @@ export default function POSPage() {
         <DrawerTrigger asChild>
           <button className="touch-target fixed bottom-5 end-5 z-40 w-14 h-14 bg-brand text-white rounded-full shadow-lg hover:bg-brand-hover active:bg-brand-hover transition-colors md:hidden" aria-label={t('cart')}>
             <ShoppingCart size={22} />
-            {itemCount > 0 && (
+            {fabCount > 0 && (
               <span className="absolute -top-0.5 -end-0.5 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
-                {itemCount}
+                {fabCount}
               </span>
             )}
           </button>
@@ -1111,6 +1160,7 @@ export default function POSPage() {
           onAddItems={handleAddItemsToOrder}
           onPayment={(bill) => { setCheckoutTable(null); setPaymentBill(bill); }}
           onAddCartToOrder={handleAddCartToOrder}
+          onFloorChanged={() => { void refreshTables(); }}
         />
       )}
 

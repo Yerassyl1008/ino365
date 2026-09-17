@@ -12,7 +12,7 @@ const POLL_INTERVAL_MS = 4000;
 const MAX_POLLS = 20;
 
 /**
- * Submission is fire-and-forget into FloCafe's local outbox — the real
+ * Submission is fire-and-forget into KorgenKassa's local outbox — the real
  * support_code only exists once FloAdmin has accepted the ticket. Polls the
  * local status route until delivery is confirmed (or gives up after
  * MAX_POLLS, leaving the outbox's own retry/backoff to keep trying).

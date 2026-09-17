@@ -278,7 +278,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   if (variant === 'topbar') {
     return (
       <div className="relative w-full min-w-0">
-        <div className="h-10 flex items-center gap-2 min-w-0" onBlur={handleWidgetBlur}>
+        <div className="flex min-h-10 min-w-0 flex-col gap-2 sm:flex-row sm:items-center" onBlur={handleWidgetBlur}>
 
           <input
             type="tel"
@@ -287,7 +287,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
             onChange={handlePhoneChange}
             onKeyDown={handlePhoneKeyDown}
             placeholder={dialCode ? `${dialCode} ${t('phone')}` : t('phone')}
-            className="h-10 w-48 shrink-0 px-3 text-sm border border-amber-400 bg-amber-50 placeholder:text-amber-600/70 rounded-lg focus:ring-2 focus:ring-amber-200 focus:border-amber-500 outline-none"
+            className="h-11 w-full min-w-0 px-3 text-base sm:text-sm border border-amber-400 bg-amber-50 placeholder:text-amber-600/70 rounded-lg focus:ring-2 focus:ring-amber-200 focus:border-amber-500 outline-none sm:h-10 sm:w-40 sm:shrink-0"
             dir="ltr"
           />
           <input
@@ -302,7 +302,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
             }}
             readOnly={!!matched}
             placeholder={searched ? (matched ? '' : t('enterName')) : t('nameAutoFills')}
-            className={`h-10 w-48 shrink-0 px-3 text-sm border rounded-lg focus:ring-2 outline-none transition-colors duration-150 ${
+            className={`h-11 w-full min-w-0 px-3 text-base sm:text-sm border rounded-lg focus:ring-2 outline-none transition-colors duration-150 sm:h-10 sm:flex-1 ${
               matched
                 ? 'border-border bg-muted cursor-pointer focus:ring-brand/20 focus:border-brand'
                 : 'border-indigo-200 bg-indigo-50 placeholder:text-indigo-400/80 focus:ring-indigo-200 focus:border-indigo-400'

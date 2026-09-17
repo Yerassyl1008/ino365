@@ -42,6 +42,7 @@ export function useTaxPreview(
   customerId: number | string | null,
   packagingCharge?: number,
   discount?: TaxPreviewDiscount | null,
+  orderType: 'dine_in' | 'takeaway' | 'delivery' | 'online' = 'dine_in',
 ): { tax: TaxPreview | null; loading: boolean; error: string | null } {
   const isEmpty = !items || items.length === 0;
   const [tax, setTax] = useState<TaxPreview | null>(null);
@@ -67,6 +68,7 @@ export function useTaxPreview(
     packagingCharge,
     discountType: discount?.type,
     discountValue: discount?.value,
+    orderType,
   });
   if (
     items !== syncedRequest.items
@@ -74,6 +76,7 @@ export function useTaxPreview(
     || packagingCharge !== syncedRequest.packagingCharge
     || discount?.type !== syncedRequest.discountType
     || discount?.value !== syncedRequest.discountValue
+    || orderType !== syncedRequest.orderType
   ) {
     setSyncedRequest({
       items,
@@ -81,6 +84,7 @@ export function useTaxPreview(
       packagingCharge,
       discountType: discount?.type,
       discountValue: discount?.value,
+      orderType,
     });
     if (!isEmpty) {
       setLoading(true);
@@ -119,6 +123,7 @@ export function useTaxPreview(
           packaging_charge: packagingCharge || 0,
           discount_type: discount?.type,
           discount_value: discount?.value,
+          order_type: orderType,
         };
 
         const { data } = await api.post<TaxPreviewResponse>('/tax/preview', payload, {
@@ -146,7 +151,7 @@ export function useTaxPreview(
       }
       controller.abort();
     };
-  }, [items, customerId, packagingCharge, discount?.type, discount?.value, isEmpty]);
+  }, [items, customerId, packagingCharge, discount?.type, discount?.value, orderType, isEmpty]);
 
   return { tax, loading, error };
 }

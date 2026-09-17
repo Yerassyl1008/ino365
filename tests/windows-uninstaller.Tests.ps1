@@ -11,7 +11,7 @@ BeforeAll {
   . $uninstallerPath
 }
 
-Describe 'Flo Cafe Windows uninstaller' {
+Describe 'KorgenKassa Windows uninstaller' {
   It 'resolves Keep/Delete before looking for a process to terminate' {
     $events = New-Object 'System.Collections.Generic.List[string]'
 
@@ -25,7 +25,7 @@ Describe 'Flo Cafe Windows uninstaller' {
     Mock Get-ItemProperty { @() }
     Mock Test-Path { $false }
 
-    $result = Invoke-FloCafeUninstall
+    $result = Invoke-KorgenKassaUninstall
 
     $events.IndexOf('data-decision') | Should -BeLessThan $events.IndexOf('process-lookup')
     $result.PurgeData | Should -BeFalse
@@ -54,7 +54,7 @@ Describe 'Flo Cafe Windows uninstaller' {
     Mock Test-Path { $false }
     Mock Stop-Process {}
 
-    $result = Invoke-FloCafeUninstall
+    $result = Invoke-KorgenKassaUninstall
 
     $process.CloseCalls | Should -Be 1
     Should -Invoke Stop-Process -Times 0 -Exactly
@@ -62,17 +62,17 @@ Describe 'Flo Cafe Windows uninstaller' {
   }
 
   It 'bounds a hung child uninstaller and continues with manual cleanup' {
-    $uninstallerExe = 'C:\Flo Cafe\uninstall.exe'
-    $fallbackInstallPath = 'C:\Flo Cafe Fixture\Programs\Flo Cafe'
+    $uninstallerExe = 'C:\KorgenKassa\uninstall.exe'
+    $fallbackInstallPath = 'C:\KorgenKassa Fixture\Programs\KorgenKassa'
     $intermediateId = 9899
     $descendantId = 9900
     $lateDescendantId = 9902
     $entry = [pscustomobject]@{
-      DisplayName     = 'Flo Cafe'
-      PSChildName     = 'FloCafe'
-      PSPath          = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FloCafe'
-      InstallLocation = 'C:\Flo Cafe'
-      UninstallString = '"C:\Flo Cafe\uninstall.exe" /D=C:\Flo Cafe'
+      DisplayName     = 'KorgenKassa'
+      PSChildName     = 'KorgenKassa'
+      PSPath          = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\KorgenKassa'
+      InstallLocation = 'C:\KorgenKassa'
+      UninstallString = '"C:\KorgenKassa\uninstall.exe" /D=C:\KorgenKassa'
     }
     $child = [pscustomobject]@{ Id = 9898; ExitCode = 0 }
     $child | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {
@@ -135,10 +135,10 @@ Describe 'Flo Cafe Windows uninstaller' {
     }
 
     try {
-      $env:LOCALAPPDATA = 'C:\Flo Cafe Fixture'
+      $env:LOCALAPPDATA = 'C:\KorgenKassa Fixture'
       $script:ChildUninstallerTimeoutSeconds = 1
 
-      $result = Invoke-FloCafeUninstall
+      $result = Invoke-KorgenKassaUninstall
 
       $result.Complete | Should -BeFalse
       ($result.Issues -join "`n") | Should -Match 'did not exit within'
@@ -155,13 +155,13 @@ Describe 'Flo Cafe Windows uninstaller' {
   }
 
   It 'blocks cleanup when child process inspection times out' {
-    $uninstallerExe = 'C:\Flo Cafe\uninstall.exe'
+    $uninstallerExe = 'C:\KorgenKassa\uninstall.exe'
     $entry = [pscustomobject]@{
-      DisplayName     = 'Flo Cafe'
-      PSChildName     = 'FloCafe'
-      PSPath          = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FloCafe'
-      InstallLocation = 'C:\Flo Cafe'
-      UninstallString = '"C:\Flo Cafe\uninstall.exe"'
+      DisplayName     = 'KorgenKassa'
+      PSChildName     = 'KorgenKassa'
+      PSPath          = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\KorgenKassa'
+      InstallLocation = 'C:\KorgenKassa'
+      UninstallString = '"C:\KorgenKassa\uninstall.exe"'
     }
     $child = [pscustomobject]@{ Id = 9901; ExitCode = 0 }
     $child | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {
@@ -178,7 +178,7 @@ Describe 'Flo Cafe Windows uninstaller' {
     Mock Get-CimInstance { throw 'WMI operation timed out' }
     Mock Remove-Item {}
 
-    $result = Invoke-FloCafeUninstall
+    $result = Invoke-KorgenKassaUninstall
 
     $result.Complete | Should -BeFalse
     ($result.Issues -join "`n") | Should -Match 'could not inspect child processes'
@@ -216,13 +216,13 @@ Describe 'Flo Cafe Windows uninstaller' {
   }
 
   It 'reports partial cleanup when a completed child exit code cannot be read' {
-    $uninstallerExe = 'C:\Flo Cafe\uninstall.exe'
+    $uninstallerExe = 'C:\KorgenKassa\uninstall.exe'
     $entry = [pscustomobject]@{
-      DisplayName     = 'Flo Cafe'
-      PSChildName     = 'FloCafe'
-      PSPath          = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FloCafe'
-      InstallLocation = 'C:\Flo Cafe'
-      UninstallString = '"C:\Flo Cafe\uninstall.exe"'
+      DisplayName     = 'KorgenKassa'
+      PSChildName     = 'KorgenKassa'
+      PSPath          = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\KorgenKassa'
+      InstallLocation = 'C:\KorgenKassa'
+      UninstallString = '"C:\KorgenKassa\uninstall.exe"'
     }
     $child = [pscustomobject]@{ Id = 9899 }
     $child | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {
@@ -241,7 +241,7 @@ Describe 'Flo Cafe Windows uninstaller' {
     Mock Start-Process { $child }
     Mock Get-CimInstance { return @() }
 
-    $result = Invoke-FloCafeUninstall
+    $result = Invoke-KorgenKassaUninstall
 
     $result.Complete | Should -BeFalse
     ($result.Issues -join "`n") | Should -Match "could not verify the app's own uninstaller exit code"
@@ -262,7 +262,7 @@ Describe 'Flo Cafe Windows uninstaller' {
       Mock Remove-Item { throw 'file is locked' }
       Mock Start-Sleep {}
 
-      $result = Invoke-Removal 'C:\Flo Cafe' 'install directory'
+      $result = Invoke-Removal 'C:\KorgenKassa' 'install directory'
 
       $result.Complete | Should -BeFalse
       $script:CleanupComplete | Should -BeFalse
@@ -278,8 +278,8 @@ Describe 'Flo Cafe Windows uninstaller' {
     $script:CleanupIssues = New-Object 'System.Collections.Generic.List[string]'
     $script:DryRun = $false
     $entry = [pscustomobject]@{
-      PSChildName = 'FloCafe'
-      PSPath      = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FloCafe'
+      PSChildName = 'KorgenKassa'
+      PSPath      = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\KorgenKassa'
     }
 
     Mock Confirm-NoActiveUninstallWork { $true }
@@ -297,8 +297,8 @@ Describe 'Flo Cafe Windows uninstaller' {
     $script:CleanupIssues = New-Object 'System.Collections.Generic.List[string]'
     $script:DryRun = $false
     $entry = [pscustomobject]@{
-      PSChildName = 'FloCafe'
-      PSPath      = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FloCafe'
+      PSChildName = 'KorgenKassa'
+      PSPath      = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\KorgenKassa'
     }
 
     Mock Confirm-NoActiveUninstallWork { $true }
@@ -312,11 +312,11 @@ Describe 'Flo Cafe Windows uninstaller' {
     Should -Invoke Remove-Item -Times 1 -Exactly -ParameterFilter { $LiteralPath -eq $entry.PSPath -and $Recurse -and $Force }
   }
 
-  It 'skips purge when Flo Cafe cannot be confirmed stopped' {
+  It 'skips purge when KorgenKassa cannot be confirmed stopped' {
     $entry = [pscustomobject]@{
-      DisplayName     = 'Flo Cafe'
-      PSChildName     = 'FloCafe'
-      PSPath          = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FloCafe'
+      DisplayName     = 'KorgenKassa'
+      PSChildName     = 'KorgenKassa'
+      PSPath          = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\KorgenKassa'
       InstallLocation = ''
       UninstallString = ''
     }
@@ -329,7 +329,7 @@ Describe 'Flo Cafe Windows uninstaller' {
     Mock Test-Path { $false }
     Mock Remove-Item {}
 
-    $result = Invoke-FloCafeUninstall -PurgeData
+    $result = Invoke-KorgenKassaUninstall -PurgeData
 
     $result.Complete | Should -BeFalse
     ($result.Issues -join "`n") | Should -Match 'still running'
@@ -338,9 +338,9 @@ Describe 'Flo Cafe Windows uninstaller' {
 
   It 'keeps readable registry results when another uninstall root is inaccessible' {
     $readableEntry = [pscustomobject]@{
-      DisplayName     = 'Flo Cafe'
-      PSChildName     = 'FloCafe'
-      PSPath          = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FloCafe'
+      DisplayName     = 'KorgenKassa'
+      PSChildName     = 'KorgenKassa'
+      PSPath          = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\KorgenKassa'
       InstallLocation = ''
       UninstallString = ''
     }
@@ -359,7 +359,7 @@ Describe 'Flo Cafe Windows uninstaller' {
       if ($LiteralPath -eq $readableEntry.PSPath) { $state.RegistryExists = $false }
     }
 
-    $result = Invoke-FloCafeUninstall
+    $result = Invoke-KorgenKassaUninstall
 
     $result.Complete | Should -BeFalse
     ($result.Issues -join "`n") | Should -Match 'HKCU:.*access denied to HKCU'
@@ -369,22 +369,22 @@ Describe 'Flo Cafe Windows uninstaller' {
   }
 
   It 'processes and verifies every matching registry installation entry' {
-    $firstInstallPath = 'C:\Flo Cafe First'
-    $secondInstallPath = 'C:\Flo Cafe Second'
-    $firstUninstaller = 'C:\Flo Cafe First\uninstall.exe'
-    $secondUninstaller = 'C:\Flo Cafe Second\uninstall.exe'
+    $firstInstallPath = 'C:\KorgenKassa First'
+    $secondInstallPath = 'C:\KorgenKassa Second'
+    $firstUninstaller = 'C:\KorgenKassa First\uninstall.exe'
+    $secondUninstaller = 'C:\KorgenKassa Second\uninstall.exe'
     $testEntries = @(
       [pscustomobject]@{
-        DisplayName     = 'Flo Cafe'
-        PSChildName     = 'FloCafeFirst'
-        PSPath          = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FloCafeFirst'
+        DisplayName     = 'KorgenKassa'
+        PSChildName     = 'KorgenKassaFirst'
+        PSPath          = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\KorgenKassaFirst'
         InstallLocation = $firstInstallPath
         UninstallString = "`"$firstUninstaller`""
       }
       [pscustomobject]@{
-        DisplayName     = 'Flo Cafe'
-        PSChildName     = 'FloCafeSecond'
-        PSPath          = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FloCafeSecond'
+        DisplayName     = 'KorgenKassa'
+        PSChildName     = 'KorgenKassaSecond'
+        PSPath          = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\KorgenKassaSecond'
         InstallLocation = $secondInstallPath
         UninstallString = "`"$secondUninstaller`""
       }
@@ -420,7 +420,7 @@ Describe 'Flo Cafe Windows uninstaller' {
       return $true
     }
 
-    $result = Invoke-FloCafeUninstall
+    $result = Invoke-KorgenKassaUninstall
 
     $result.Complete | Should -BeTrue
     Should -Invoke Start-Process -Times 2 -Exactly
@@ -433,10 +433,10 @@ Describe 'Flo Cafe Windows uninstaller' {
   It 'does not launch an uninstaller outside a known install location' {
     $outsideExe = 'C:\Users\attacker\uninstall.exe'
     $entry = [pscustomobject]@{
-      DisplayName     = 'Flo Cafe'
-      PSChildName     = 'FloCafe'
-      PSPath          = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FloCafe'
-      InstallLocation = 'C:\Program Files\Flo Cafe'
+      DisplayName     = 'KorgenKassa'
+      PSChildName     = 'KorgenKassa'
+      PSPath          = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\KorgenKassa'
+      InstallLocation = 'C:\Program Files\KorgenKassa'
       UninstallString = "`"$outsideExe`""
     }
 
@@ -449,7 +449,7 @@ Describe 'Flo Cafe Windows uninstaller' {
     Mock Remove-Item {}
     Mock Invoke-RegistryRemoval { $true }
 
-    $result = Invoke-FloCafeUninstall
+    $result = Invoke-KorgenKassaUninstall
 
     $result.Complete | Should -BeTrue
     Should -Invoke Start-Process -Times 0 -Exactly

@@ -4,7 +4,7 @@ import jwt, { SignOptions } from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { randomBytes } from 'crypto';
 import { getCountryCallingCode, type CountryCode } from 'libphonenumber-js';
-import { getCurrentSchemaVersion, getDatabase, getSettingValue, now } from '../db';
+import { getCurrentSchemaVersion, getDatabase, getSettingValue, now, verifyPin } from '../db';
 import { authorizeMasterPin, isMasterPinAvailable, setMasterPin } from '../services/master-pin';
 import { authRateLimit, validatePassword, revokeToken, isTokenRevoked, isTokenStale, invalidateUserAuthCache } from '../middleware/security';
 import { getCurrencySymbol, getCountryByCode, isValidTimeZone } from '../countries';
@@ -12,6 +12,10 @@ import { countryConfirmationPatch } from '../services/country-provenance';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
 import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
+import { seedShashlikMenu } from '../services/shashlik-seed';
+import { seedExpressRestaurantCatalog, seedExpressRetail } from '../services/catalog-templates';
+import { ensureOpenShift } from '../services/shifts';
+import { PIN_LOGIN_ROLES } from '../../shared/role-permissions';
 
 const router = Router();
 
@@ -30,7 +34,7 @@ function dialCodeFor(country: string | undefined): string {
 }
 
 const INITIAL_ADMIN_ROLE = 'owner';
-const VALID_BUSINESS_TYPES = new Set(['restaurant']);
+const VALID_BUSINESS_TYPES = new Set(['restaurant', 'retail']);
 const VALID_SETUP_PROFILES = new Set(['empty', 'express', 'demo']);
 const VALID_SERVICE_MODELS = new Set(['qsr', 'finedine']);
 const LOCAL_SETUP_HOSTS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
@@ -127,6 +131,32 @@ export function parseCategoryIds(value: unknown): string[] {
   }
 }
 
+function buildLoginPayload(
+  db: ReturnType<typeof getDatabase>,
+  user: { id: string; name: string; email: string; role: string; category_ids?: unknown },
+  remember: boolean,
+) {
+  const token = jwt.sign(
+    { userId: user.id, email: user.email, role: user.role, remember, jti: uuidv4() },
+    getJWTSecret(),
+    { expiresIn: expiresInFor(remember) },
+  );
+  const tenant = buildLocalTenant(db, user.role);
+  return {
+    access_token: token,
+    token_type: 'bearer',
+    expires_in: remember ? JWT_REMEMBER_EXPIRES_IN_SECONDS : 86400,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      category_ids: parseCategoryIds(user.category_ids),
+    },
+    tenants: [tenant],
+  };
+}
+
 // RFC 5321 caps a mailbox at 254 octets. Bound the length before applying the
 // email regex so an attacker-supplied email cannot drive `[^\s@]+` backtracking
 // into super-linear time (CodeQL js/polynomial-redos).
@@ -147,20 +177,6 @@ function upsertSettings(db: ReturnType<typeof getDatabase>, entries: Record<stri
   }
 }
 
-
-function insertCategory(db: ReturnType<typeof getDatabase>, id: string, name: string, color: string, icon: string, sortOrder: number): void {
-  db.prepare(`
-    INSERT OR IGNORE INTO categories (id, name, color, icon, sort_order, is_active, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-  `).run(id, name, color, icon, sortOrder, now(), now());
-}
-
-function insertProduct(db: ReturnType<typeof getDatabase>, id: string, categoryId: string, name: string, price: number, sortOrder: number): void {
-  db.prepare(`
-    INSERT OR IGNORE INTO products (id, category_id, name, price, sort_order, is_active, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-  `).run(id, categoryId, name, price, sortOrder, now(), now());
-}
 
 function insertTable(db: ReturnType<typeof getDatabase>, id: string, number: string, capacity: number): void {
   db.prepare(`
@@ -193,21 +209,8 @@ function seedLanguage(language?: string): SeedLanguage {
   return language === 'ru' || language === 'kk' ? language : 'en';
 }
 
-const EXPRESS_MENU: Record<SeedLanguage, Record<'food' | 'beverages' | 'meal' | 'snack' | 'tea' | 'coffee', string>> = {
-  en: { food: 'Food', beverages: 'Beverages', meal: 'Meal', snack: 'Snack', tea: 'Tea', coffee: 'Coffee' },
-  ru: { food: 'Еда', beverages: 'Напитки', meal: 'Обед', snack: 'Закуска', tea: 'Чай', coffee: 'Кофе' },
-  kk: { food: 'Тағам', beverages: 'Сусындар', meal: 'Түскі ас', snack: 'Тіскебасар', tea: 'Шай', coffee: 'Кофе' },
-};
-
 function seedExpressRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: string, language?: string): void {
-  const menu = EXPRESS_MENU[seedLanguage(language)];
-  insertCategory(db, 'cat-express-food', menu.food, '#F97316', '🍽️', 1);
-  insertCategory(db, 'cat-express-beverages', menu.beverages, '#0EA5E9', '🥤', 2);
-
-  insertProduct(db, 'prod-express-meal', 'cat-express-food', menu.meal, 150, 1);
-  insertProduct(db, 'prod-express-snack', 'cat-express-food', menu.snack, 80, 2);
-  insertProduct(db, 'prod-express-tea', 'cat-express-beverages', menu.tea, 25, 1);
-  insertProduct(db, 'prod-express-coffee', 'cat-express-beverages', menu.coffee, 40, 2);
+  seedExpressRestaurantCatalog(db, language);
 
   if (serviceModel === 'finedine') {
     insertTable(db, 'tbl-express-1', 'T1', 4);
@@ -217,8 +220,6 @@ function seedExpressRestaurant(db: ReturnType<typeof getDatabase>, serviceModel:
 }
 
 interface DemoSeed {
-  readonly categories: ReadonlyArray<readonly [string, string, string, string, number]>;
-  readonly products: ReadonlyArray<readonly [string, string, string, number, number]>;
   readonly country: string;
   readonly customers: ReadonlyArray<readonly [string, string, string]>;
   readonly staff: { readonly manager: string; readonly cashier: string; readonly chef: string };
@@ -226,22 +227,6 @@ interface DemoSeed {
 
 const DEMO_SEEDS: Record<SeedLanguage, DemoSeed> = {
   en: {
-    categories: [
-      ['cat-demo-starters', 'Starters', '#FF6B6B', '🍔', 1],
-      ['cat-demo-main', 'Main Course', '#4ECDC4', '🍛', 2],
-      ['cat-demo-beverages', 'Beverages', '#45B7D1', '🥤', 3],
-      ['cat-demo-desserts', 'Desserts', '#96CEB4', '🍰', 4],
-    ],
-    products: [
-      ['prod-demo-paneer-tikka', 'cat-demo-starters', 'Paneer Tikka', 250, 1],
-      ['prod-demo-chicken-wings', 'cat-demo-starters', 'Chicken Wings', 280, 2],
-      ['prod-demo-butter-chicken', 'cat-demo-main', 'Butter Chicken', 320, 1],
-      ['prod-demo-dal-makhani', 'cat-demo-main', 'Dal Makhani', 220, 2],
-      ['prod-demo-jeera-rice', 'cat-demo-main', 'Jeera Rice', 150, 3],
-      ['prod-demo-cola', 'cat-demo-beverages', 'Cola', 60, 1],
-      ['prod-demo-lemon-soda', 'cat-demo-beverages', 'Lemon Soda', 70, 2],
-      ['prod-demo-gulab-jamun', 'cat-demo-desserts', 'Gulab Jamun', 80, 1],
-    ],
     country: 'IN',
     customers: [
       ['cust-demo-1', 'Aarav Sharma', '9876543210'],
@@ -251,22 +236,6 @@ const DEMO_SEEDS: Record<SeedLanguage, DemoSeed> = {
     staff: { manager: 'Demo Manager', cashier: 'Demo Cashier', chef: 'Demo Chef' },
   },
   ru: {
-    categories: [
-      ['cat-demo-starters', 'Закуски', '#FF6B6B', '🍔', 1],
-      ['cat-demo-main', 'Горячие блюда', '#4ECDC4', '🍛', 2],
-      ['cat-demo-beverages', 'Напитки', '#45B7D1', '🥤', 3],
-      ['cat-demo-desserts', 'Десерты', '#96CEB4', '🍰', 4],
-    ],
-    products: [
-      ['prod-demo-olivier', 'cat-demo-starters', 'Салат «Оливье»', 250, 1],
-      ['prod-demo-fries', 'cat-demo-starters', 'Картофель фри', 280, 2],
-      ['prod-demo-plov', 'cat-demo-main', 'Плов', 320, 1],
-      ['prod-demo-manti', 'cat-demo-main', 'Манты', 220, 2],
-      ['prod-demo-lagman', 'cat-demo-main', 'Лагман', 150, 3],
-      ['prod-demo-cola', 'cat-demo-beverages', 'Кола', 60, 1],
-      ['prod-demo-milk-tea', 'cat-demo-beverages', 'Чай с молоком', 70, 2],
-      ['prod-demo-baursak', 'cat-demo-desserts', 'Баурсаки', 80, 1],
-    ],
     country: 'RU',
     customers: [
       ['cust-demo-1', 'Иван Петров', '9151234567'],
@@ -276,22 +245,6 @@ const DEMO_SEEDS: Record<SeedLanguage, DemoSeed> = {
     staff: { manager: 'Демо-менеджер', cashier: 'Демо-кассир', chef: 'Демо-повар' },
   },
   kk: {
-    categories: [
-      ['cat-demo-starters', 'Тіскебасар', '#FF6B6B', '🍔', 1],
-      ['cat-demo-main', 'Негізгі тағамдар', '#4ECDC4', '🍛', 2],
-      ['cat-demo-beverages', 'Сусындар', '#45B7D1', '🥤', 3],
-      ['cat-demo-desserts', 'Тәтті тағамдар', '#96CEB4', '🍰', 4],
-    ],
-    products: [
-      ['prod-demo-olivier', 'cat-demo-starters', 'Оливье салаты', 250, 1],
-      ['prod-demo-fries', 'cat-demo-starters', 'Фри картобы', 280, 2],
-      ['prod-demo-plov', 'cat-demo-main', 'Палау', 320, 1],
-      ['prod-demo-manti', 'cat-demo-main', 'Манты', 220, 2],
-      ['prod-demo-lagman', 'cat-demo-main', 'Лағман', 150, 3],
-      ['prod-demo-cola', 'cat-demo-beverages', 'Кола', 60, 1],
-      ['prod-demo-milk-tea', 'cat-demo-beverages', 'Сүтті шай', 70, 2],
-      ['prod-demo-baursak', 'cat-demo-desserts', 'Бауырсақ', 80, 1],
-    ],
     country: 'KZ',
     customers: [
       ['cust-demo-1', 'Айдос Сериков', '7011234567'],
@@ -305,9 +258,7 @@ const DEMO_SEEDS: Record<SeedLanguage, DemoSeed> = {
 function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: string, language?: string, country?: string): void {
   const seed = DEMO_SEEDS[seedLanguage(language)];
   const dialCode = dialCodeFor(country);
-
-  for (const [id, name, color, icon, sort] of seed.categories) insertCategory(db, id, name, color, icon, sort);
-  for (const [id, categoryId, name, price, sort] of seed.products) insertProduct(db, id, categoryId, name, price, sort);
+  seedShashlikMenu(db, seedLanguage(language));
 
   if (serviceModel === 'finedine') {
     insertTable(db, 'tbl-demo-1', 'T1', 4);
@@ -328,7 +279,36 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
   insertStaffUser(db, 'user-demo-chef', chefName, 'chef@flo.local', 'chef', randomBytes(32).toString('hex'), 0);
 }
 
-export function seedSetupProfile(db: ReturnType<typeof getDatabase>, profile: string, serviceModel: string, language?: string, country?: string): void {
+function seedDemoRetail(db: ReturnType<typeof getDatabase>, language?: string, country?: string): void {
+  const seed = DEMO_SEEDS[seedLanguage(language)];
+  const dialCode = dialCodeFor(country);
+  seedExpressRetail(db, language);
+
+  const demoCountry = country || seed.country;
+  for (const [id, name, phone] of seed.customers) insertCustomer(db, id, name, phone, dialCode, demoCountry);
+
+  const { manager: managerName, cashier: cashierName } = seed.staff;
+  insertStaffUser(db, 'user-demo-manager', managerName, 'manager@flo.local', 'manager', randomBytes(32).toString('hex'), 0);
+  insertStaffUser(db, 'user-demo-cashier', cashierName, 'cashier@flo.local', 'cashier', randomBytes(32).toString('hex'), 0);
+}
+
+export function seedSetupProfile(
+  db: ReturnType<typeof getDatabase>,
+  profile: string,
+  serviceModel: string,
+  language?: string,
+  country?: string,
+  businessType = 'restaurant',
+): void {
+  if (businessType === 'retail') {
+    if (profile === 'express') {
+      seedExpressRetail(db, language);
+    } else if (profile === 'demo') {
+      seedDemoRetail(db, language, country);
+    }
+    return;
+  }
+
   if (profile === 'express') {
     seedExpressRestaurant(db, serviceModel, language);
   } else if (profile === 'demo') {
@@ -454,32 +434,58 @@ router.post('/login', authRateLimit(), asyncHandler(async (req: Request, res: Re
     resetSuccessfulLogin(ip);
 
     const remember = !!rememberMe;
-    const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role, remember, jti: uuidv4() },
-      getJWTSecret(),
-      { expiresIn: expiresInFor(remember) }
-    );
-
-    const tenant = buildLocalTenant(db, user.role);
-
-    res.json({
-      access_token: token,
-      token_type: 'bearer',
-      expires_in: remember ? JWT_REMEMBER_EXPIRES_IN_SECONDS : 86400,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        category_ids: parseCategoryIds(user.category_ids),
-      },
-      // Single tenant — frontend auto-selects when tenants.length === 1
-      tenants: [tenant],
-    });
+    if (user.role === 'cashier' || user.role === 'server') {
+      ensureOpenShift(db, user.id);
+    }
+    res.json(buildLoginPayload(db, user, remember));
   } catch (error: any) {
     console.error('[Auth] Login error:', error);
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
+  }
+}));
+
+// ── POST /api/auth/pin-login ──────────────────────────────────────────────────
+// Floor staff (waiter/cashier/manager) sign in with a short PIN. A matching
+// PIN among owner/manager/cashier/server opens that user's personal shift.
+
+router.post('/pin-login', authRateLimit(), asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const rateLimit = checkRateLimit(ip);
+    if (!rateLimit.allowed) {
+      return res.status(429).json({ error: `Too many failed attempts. Try again in ${rateLimit.waitMinutes} minutes.` });
+    }
+
+    const pin = String(req.body?.pin ?? '');
+    const remember = !!req.body?.rememberMe;
+    if (!/^\d{4,6}$/.test(pin)) {
+      return res.status(400).json({ error: 'PIN must be 4-6 numeric digits' });
+    }
+
+    const db = getDatabase();
+    const pinPlaceholders = PIN_LOGIN_ROLES.map(() => '?').join(', ');
+    const candidates = db.prepare(
+      `SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN (${pinPlaceholders})`,
+    ).all(...PIN_LOGIN_ROLES) as any[];
+    const matches = candidates.filter((user) => verifyPin(user.pin_hash, pin));
+
+    if (matches.length !== 1) {
+      const attemptsRemaining = incrementFailedLogin(ip);
+      return res.status(401).json({
+        error: 'Invalid PIN',
+        attempts_remaining: attemptsRemaining,
+        lockout_minutes: attemptsRemaining === 0 ? LOCKOUT_MINUTES : undefined,
+      });
+    }
+
+    resetSuccessfulLogin(ip);
+    const user = matches[0];
+    ensureOpenShift(db, user.id);
+    res.json(buildLoginPayload(db, user, remember));
+  } catch (error: any) {
+    console.error('[Auth] PIN login error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 }));
 
@@ -885,17 +891,19 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       return res.status(400).json({ error: 'A 4-digit Master PIN is required to complete setup' });
     }
 
+    const isRetail = normalizedBusinessType === 'retail';
     if (!VALID_BUSINESS_TYPES.has(normalizedBusinessType)) {
-      return res.status(400).json({ error: 'FloCafe setup only supports restaurant businesses' });
+      return res.status(400).json({ error: 'Invalid business type' });
     }
 
     if (!VALID_SETUP_PROFILES.has(normalizedSetupProfile)) {
       return res.status(400).json({ error: 'Invalid setup profile' });
     }
 
-    if (!VALID_SERVICE_MODELS.has(normalizedServiceModel)) {
+    if (!isRetail && !VALID_SERVICE_MODELS.has(normalizedServiceModel)) {
       return res.status(400).json({ error: 'Invalid service model' });
     }
+    const effectiveServiceModel = isRetail ? 'qsr' : normalizedServiceModel;
 
     // Cloud v2 registers the POS automatically on first boot. There is no
     // pending/claim step, so new installs start with cloud coordination on.
@@ -952,10 +960,13 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         tax_registration_number,
         state_code,
         tax_registered,
-        billing_type: billing_type || (normalizedServiceModel === 'qsr' ? 'prepaid' : 'postpaid'),
-        tables_required: normalizedServiceModel === 'finedine' ? 'true' : 'false',
-        service_model: normalizedServiceModel,
+        billing_type: isRetail ? 'prepaid' : (billing_type || (effectiveServiceModel === 'qsr' ? 'prepaid' : 'postpaid')),
+        tables_required: isRetail ? 'false' : (effectiveServiceModel === 'finedine' ? 'true' : 'false'),
+        service_model: effectiveServiceModel,
         setup_profile: normalizedSetupProfile,
+        kds_enabled: isRetail ? 'false' : undefined,
+        server_app_enabled: isRetail ? 'false' : undefined,
+        kot_printing_enabled: isRetail ? 'false' : undefined,
         onboarding_completed: 'true',
         // Completing setup is not by itself a country choice: the wizard
         // preselects IN and submits it whether or not the picker was touched.
@@ -975,7 +986,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         cloud_services_disabled_by_user: 'false',
       });
 
-      seedSetupProfile(db, normalizedSetupProfile, normalizedServiceModel, language, country);
+      seedSetupProfile(db, normalizedSetupProfile, effectiveServiceModel, language, country, normalizedBusinessType);
     })();
 
     // Pick up the cloud settings just written without requiring a restart —

@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
-import { ArrowLeft, ArrowRight, Check, Cloud, Database, KeyRound, Search, Sparkles, UtensilsCrossed, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Cloud, Database, KeyRound, Search, Sparkles, Store, UtensilsCrossed, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { COUNTRIES, getCountryByCode, getLocalizedCountryName, countryMatchesQuery, sortCountriesByLocalizedName, type Country } from '@/lib/countries';
 import { TimeZoneSelect } from '@/components/TimeZoneSelect';
@@ -17,6 +17,7 @@ import { LANGUAGES, getBrowserLanguage, type Language } from '@/lib/i18n';
 
 type SetupProfile = 'empty' | 'express' | 'demo';
 type ServiceModel = 'qsr' | 'finedine';
+type BusinessType = 'restaurant' | 'retail';
 
 const SETUP_PROFILES: Array<{ value: SetupProfile; badge?: 'express' | null }> = [
   { value: 'empty' },
@@ -27,6 +28,11 @@ const SETUP_PROFILES: Array<{ value: SetupProfile; badge?: 'express' | null }> =
 const SERVICE_MODELS: Array<{ value: ServiceModel }> = [
   { value: 'qsr' },
   { value: 'finedine' },
+];
+
+const BUSINESS_TYPES: Array<{ value: BusinessType; icon: typeof UtensilsCrossed }> = [
+  { value: 'restaurant', icon: UtensilsCrossed },
+  { value: 'retail', icon: Store },
 ];
 
 // Exhaustively typed leaf-key maps for the setup profile / service model
@@ -44,6 +50,11 @@ const SERVICE_MODEL_KEYS = {
   qsr: { label: 'qsrLabel', desc: 'qsrDesc', details: 'qsrDetails' },
   finedine: { label: 'finedineLabel', desc: 'finedineDesc', details: 'finedineDetails' },
 } as const satisfies Record<ServiceModel, { label: SetupKey; desc: SetupKey; details: SetupKey }>;
+
+const BUSINESS_TYPE_KEYS = {
+  restaurant: { label: 'cafeLabel', desc: 'cafeDesc', details: 'cafeDetails' },
+  retail: { label: 'retailLabel', desc: 'retailDesc', details: 'retailDetails' },
+} as const satisfies Record<BusinessType, { label: SetupKey; desc: SetupKey; details: SetupKey }>;
 
 // Registry-derived selectable languages (derived from LANGUAGES registry where selectable: true).
 const SELECTABLE_LANGUAGES: Language[] = (Object.keys(LANGUAGES) as Language[]).filter(
@@ -77,6 +88,7 @@ export default function SetupPage() {
   const [showMasterPin, setShowMasterPin] = useState(false);
   const [showConfirmMasterPin, setShowConfirmMasterPin] = useState(false);
   const [profile, setProfile] = useState<SetupProfile>('express');
+  const [businessType, setBusinessType] = useState<BusinessType>('restaurant');
   const [serviceModel, setServiceModel] = useState<ServiceModel>('qsr');
   // The wizard's language follows the shared store so the atomic provider
   // (and therefore useTranslations below) renders the chosen language
@@ -240,10 +252,10 @@ export default function SetupPage() {
         name: form.name,
         email: form.email,
         password: form.password,
-        business_type: 'restaurant',
+        business_type: businessType,
         business_name: form.business_name || undefined,
         setup_profile: profile,
-        service_model: serviceModel,
+        service_model: businessType === 'retail' ? 'qsr' : serviceModel,
         terms_accepted: termsAccepted,
         master_pin: masterPinAvailable ? masterPin : undefined,
         cloud_sync_enabled: true,
@@ -771,21 +783,25 @@ export default function SetupPage() {
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
-                  {SERVICE_MODELS.map((item) => {
-                    const selected = serviceModel === item.value;
+                  {BUSINESS_TYPES.map((item) => {
+                    const selected = businessType === item.value;
+                    const Icon = item.icon;
                     return (
                       <button
                         key={item.value}
-                        onClick={() => setServiceModel(item.value)}
+                        onClick={() => setBusinessType(item.value)}
                         className={`p-5 rounded-xl border-2 text-start transition-all ${
                           selected ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <div className="font-semibold text-lg">{t(SERVICE_MODEL_KEYS[item.value].label)}</div>
-                            <div className="text-sm text-muted-foreground mt-1">{t(SERVICE_MODEL_KEYS[item.value].desc)}</div>
-                            <div className="text-xs text-muted-foreground mt-3">{t(SERVICE_MODEL_KEYS[item.value].details)}</div>
+                            <div className="flex items-center gap-2">
+                              <Icon className="w-5 h-5 text-primary" />
+                              <div className="font-semibold text-lg">{t(BUSINESS_TYPE_KEYS[item.value].label)}</div>
+                            </div>
+                            <div className="text-sm text-muted-foreground mt-1">{t(BUSINESS_TYPE_KEYS[item.value].desc)}</div>
+                            <div className="text-xs text-muted-foreground mt-3">{t(BUSINESS_TYPE_KEYS[item.value].details)}</div>
                           </div>
                           {selected && <Check className="w-5 h-5 text-primary shrink-0" />}
                         </div>
@@ -793,6 +809,32 @@ export default function SetupPage() {
                     );
                   })}
                 </div>
+
+                {businessType === 'restaurant' && (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {SERVICE_MODELS.map((item) => {
+                      const selected = serviceModel === item.value;
+                      return (
+                        <button
+                          key={item.value}
+                          onClick={() => setServiceModel(item.value)}
+                          className={`p-5 rounded-xl border-2 text-start transition-all ${
+                            selected ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="font-semibold text-lg">{t(SERVICE_MODEL_KEYS[item.value].label)}</div>
+                              <div className="text-sm text-muted-foreground mt-1">{t(SERVICE_MODEL_KEYS[item.value].desc)}</div>
+                              <div className="text-xs text-muted-foreground mt-3">{t(SERVICE_MODEL_KEYS[item.value].details)}</div>
+                            </div>
+                            {selected && <Check className="w-5 h-5 text-primary shrink-0" />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
 
                 <Button onClick={handleCompleteSetup} disabled={loading} className="w-full" size="lg">
                   {loading ? t('completingSetup') : (

@@ -11,12 +11,13 @@ const router = Router();
 const ACTIVE_ORDER_STATUS_SQL = "status NOT IN ('completed', 'cancelled')";
 
 function activeOrderForTable(db: ReturnType<typeof getDatabase>, tableId: string, orderId?: number | string) {
-  const whereOrder = orderId ? ' AND id = ?' : '';
+  const whereOrder = orderId ? ' AND o.id = ?' : '';
   const params = orderId ? [tableId, orderId] : [tableId];
   const order = parseRowJson(db.prepare(`
-    SELECT * FROM orders
-    WHERE table_id = ? AND ${ACTIVE_ORDER_STATUS_SQL}${whereOrder}
-    ORDER BY created_at DESC LIMIT 1
+    SELECT o.*, u.name AS waiter_name FROM orders o
+    LEFT JOIN users u ON u.id = o.user_id
+    WHERE o.table_id = ? AND o.status NOT IN ('completed', 'cancelled')${whereOrder}
+    ORDER BY o.created_at DESC LIMIT 1
   `).get(...params) as any);
   if (!order?.customer_id) return order;
 
@@ -24,13 +25,28 @@ function activeOrderForTable(db: ReturnType<typeof getDatabase>, tableId: string
   return { ...order, customer: customer || null };
 }
 
-function tableShape(table: any, activeOrder?: any) {
+function itemReadinessForOrder(db: ReturnType<typeof getDatabase>, orderId: number) {
+  const rows = db.prepare(`
+    SELECT status, COUNT(*) AS n FROM order_items
+    WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')
+    GROUP BY status
+  `).all(orderId) as { status: string; n: number }[];
+  const readiness: Record<string, number> = {};
+  for (const row of rows) readiness[row.status] = row.n;
+  return readiness;
+}
+
+function tableShape(table: any, activeOrder?: any, db?: ReturnType<typeof getDatabase>) {
   const currentOrder = activeOrder || null;
   return {
     ...table,
     name: table.number,
     activeOrder: currentOrder,
     current_order: currentOrder,
+    order_total: currentOrder ? currentOrder.total : null,
+    stay_started_at: currentOrder ? currentOrder.created_at : null,
+    waiter_name: currentOrder?.waiter_name || null,
+    item_readiness: currentOrder && db ? itemReadinessForOrder(db, currentOrder.id) : null,
   };
 }
 
@@ -64,7 +80,7 @@ router.get('/', (req: Request, res: Response) => {
 
     const rows = db.prepare(query).all(...params);
     // Normalize: frontend expects `name`, schema column is `number`
-    const tables = rows.map((t: any) => tableShape(t, activeOrderForTable(db, t.id)));
+    const tables = rows.map((t: any) => tableShape(t, activeOrderForTable(db, t.id), db));
     res.json({ tables });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
@@ -83,7 +99,7 @@ router.get('/:id', (req: Request, res: Response) => {
     const activeOrder = activeOrderForTable(db, req.params.id as string);
 
     // Normalize: frontend expects `name`, schema column is `number`
-    res.json({ table: tableShape(table as any, activeOrder) });
+    res.json({ table: tableShape(table as any, activeOrder, db) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -256,12 +272,13 @@ router.post('/:id/move-order', requireRole(...ROLE_ACCESS.sales), (req: Request,
       }
 
       const nowStr = now();
+      const movedStatus = sourceTable.status === 'precheck' ? 'precheck' : 'occupied';
       db.prepare('UPDATE orders SET table_id = ?, type = ?, updated_at = ? WHERE id = ?')
         .run(target_table_id, order.type, nowStr, order.id);
       db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
         .run(nowStr, sourceTableId);
-      db.prepare("UPDATE tables SET status = 'occupied', updated_at = ? WHERE id = ?")
-        .run(nowStr, target_table_id);
+      db.prepare('UPDATE tables SET status = ?, updated_at = ? WHERE id = ?')
+        .run(movedStatus, nowStr, target_table_id);
 
       const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id) as any);
       const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
@@ -274,8 +291,8 @@ router.post('/:id/move-order', requireRole(...ROLE_ACCESS.sales), (req: Request,
           items,
           table: { ...updatedTarget, name: updatedTarget.number },
         },
-        sourceTable: tableShape(updatedSource, activeOrderForTable(db, sourceTableId)),
-        targetTable: tableShape(updatedTarget, activeOrderForTable(db, target_table_id)),
+        sourceTable: tableShape(updatedSource, activeOrderForTable(db, sourceTableId), db),
+        targetTable: tableShape(updatedTarget, activeOrderForTable(db, target_table_id), db),
       };
     });
 
@@ -294,6 +311,124 @@ router.post('/:id/move-order', requireRole(...ROLE_ACCESS.sales), (req: Request,
   }
 });
 
+function mergeBlockReason(db: ReturnType<typeof getDatabase>, orderId: number): string | null {
+  const bills = db.prepare('SELECT * FROM bills WHERE order_id = ?').all(orderId) as any[];
+  for (const bill of bills) {
+    if (bill.split_group_id) return 'Cannot merge a split check';
+    if (bill.payment_status !== 'unpaid') return 'Cannot merge a paid or partially paid check';
+    if (bill.precheck_printed_at) return 'Cancel the precheck before merging tables';
+  }
+  return null;
+}
+
+router.post('/:id/merge-order', requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
+  try {
+    const destTableId = req.params.id as string;
+    const { source_table_id } = req.body || {};
+    if (!source_table_id) {
+      return res.status(400).json({ error: 'source_table_id is required' });
+    }
+    if (source_table_id === destTableId) {
+      return res.status(400).json({ error: 'Cannot merge a table with itself' });
+    }
+
+    const db = getDatabase();
+    const merged = withTxn(() => {
+      const destTable = db.prepare('SELECT * FROM tables WHERE id = ?').get(destTableId) as any;
+      const sourceTable = db.prepare('SELECT * FROM tables WHERE id = ?').get(source_table_id) as any;
+      if (!destTable || !sourceTable) {
+        const error: any = new Error('Table not found');
+        error.status = 404;
+        throw error;
+      }
+
+      const destOrder = activeOrderForTable(db, destTableId) as any;
+      const sourceOrder = activeOrderForTable(db, source_table_id) as any;
+      if (!destOrder) {
+        const error: any = new Error('Destination table has no active order');
+        error.status = 404;
+        throw error;
+      }
+      if (!sourceOrder) {
+        const error: any = new Error('Source table has no active order');
+        error.status = 404;
+        throw error;
+      }
+      if (destTable.status === 'precheck' || sourceTable.status === 'precheck') {
+        const error: any = new Error('Cancel the precheck before merging tables');
+        error.status = 409;
+        throw error;
+      }
+
+      const destBlock = mergeBlockReason(db, destOrder.id);
+      if (destBlock) {
+        const error: any = new Error(destBlock);
+        error.status = 409;
+        throw error;
+      }
+      const sourceBlock = mergeBlockReason(db, sourceOrder.id);
+      if (sourceBlock) {
+        const error: any = new Error(sourceBlock);
+        error.status = 409;
+        throw error;
+      }
+
+      const nowStr = now();
+      db.prepare('UPDATE order_items SET order_id = ?, updated_at = ? WHERE order_id = ?')
+        .run(destOrder.id, nowStr, sourceOrder.id);
+
+      const destSubtotal = Number(destOrder.subtotal || 0) + Number(sourceOrder.subtotal || 0);
+      const destTax = Number(destOrder.tax_amount || 0) + Number(sourceOrder.tax_amount || 0);
+      const destDiscount = Number(destOrder.discount_amount || 0) + Number(sourceOrder.discount_amount || 0);
+      const destTotal = Number(destOrder.total || 0) + Number(sourceOrder.total || 0);
+      const destGuests = Math.min(99, Math.max(1, Number(destOrder.guest_count || 1) + Number(sourceOrder.guest_count || 1)));
+
+      db.prepare(`
+        UPDATE orders SET subtotal = ?, tax_amount = ?, discount_amount = ?, total = ?, guest_count = ?, updated_at = ?
+        WHERE id = ?
+      `).run(destSubtotal, destTax, destDiscount, destTotal, destGuests, nowStr, destOrder.id);
+
+      db.prepare(`
+        UPDATE orders SET table_id = NULL, status = 'cancelled', subtotal = 0, tax_amount = 0, total = 0,
+          cancelled_at = ?, cancellation_reason = ?, updated_at = ?
+        WHERE id = ?
+      `).run(nowStr, `Merged into table ${destTable.number}`, nowStr, sourceOrder.id);
+
+      db.prepare("DELETE FROM bills WHERE order_id = ? AND payment_status = 'unpaid' AND COALESCE(paid_amount, 0) = 0")
+        .run(sourceOrder.id);
+
+      const destBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(destOrder.id) as any;
+      if (destBill) {
+        const newBalance = Math.max(0, destTotal - (destBill.paid_amount || 0));
+        db.prepare('UPDATE bills SET subtotal = ?, tax_amount = ?, discount_amount = ?, total = ?, balance = ?, updated_at = ? WHERE id = ?')
+          .run(destSubtotal, destTax, destDiscount, destTotal, newBalance, nowStr, destBill.id);
+      }
+
+      db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?").run(nowStr, source_table_id);
+      db.prepare("UPDATE tables SET status = 'occupied', updated_at = ? WHERE id = ?").run(nowStr, destTableId);
+
+      const updatedDest = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(destOrder.id) as any);
+      const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(destOrder.id);
+      const updatedSourceTable = db.prepare('SELECT * FROM tables WHERE id = ?').get(source_table_id) as any;
+      const updatedDestTable = db.prepare('SELECT * FROM tables WHERE id = ?').get(destTableId) as any;
+
+      return {
+        order: { ...updatedDest, items, table: { ...updatedDestTable, name: updatedDestTable.number } },
+        sourceTable: tableShape(updatedSourceTable, activeOrderForTable(db, source_table_id), db),
+        targetTable: tableShape(updatedDestTable, activeOrderForTable(db, destTableId), db),
+      };
+    });
+
+    cloudSync.recordOrderChanged(merged.order.id, 'order.table_merged');
+    notifyKdsUpdate();
+    res.json(merged);
+  } catch (error: any) {
+    const statusCode = error.status || 500;
+    console.error('[API] Table merge failed:', error);
+    res.status(statusCode).json({ error: statusCode >= 500 ? 'Table merge failed' : error.message });
+  }
+});
+
 router.patch('/:id/status', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { status } = req.body;
@@ -302,7 +437,7 @@ router.patch('/:id/status', requireRole(...ROLE_ACCESS.ownerManager), (req: Requ
       return res.status(400).json({ error: 'Status is required' });
     }
 
-    const validStatuses = ['available', 'occupied', 'reserved', 'cleaning', 'held'];
+    const validStatuses = ['available', 'occupied', 'reserved', 'cleaning', 'held', 'precheck'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ error: `Invalid status. Use: ${validStatuses.join(', ')}` });
     }

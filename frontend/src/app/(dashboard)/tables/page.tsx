@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { Plus, X, Search, UserPlus, RotateCcw } from 'lucide-react';
 import type { Table, Customer, Order, OrderItem } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
+import { useRestrictBusinessType } from '@/components/layout/AuthGuard';
 import { countryName } from '@/lib/countries';
 import { parsePhone, dialCodeFor } from '@/lib/phone';
 import { useTranslations, type AppConfig } from 'use-intl';
@@ -16,9 +17,10 @@ import { ORDER_STATUS_LABEL_KEYS, ITEM_STATUS_LABEL_KEYS, TABLE_STATUS_LABEL_KEY
 const statusColors: Record<string, string> = {
   available: 'bg-green-500',
   occupied: 'bg-red-500',
-  reserved: 'bg-yellow-500',
+  reserved: 'bg-purple-500',
   cleaning: 'bg-gray-500',
   held: 'bg-blue-500',
+  precheck: 'bg-yellow-500',
 };
 
 type OrdersKey = keyof AppConfig['Messages']['orders'];
@@ -197,6 +199,7 @@ const itemStatusColors: Record<string, { bg: string; text: string; dot: string }
 };
 
 export default function TablesPage() {
+  const allowed = useRestrictBusinessType('restaurant', '/pos');
   const tTables = useTranslations('tables');
   const tOrders = useTranslations('orders');
   const [tables, setTables] = useState<Table[]>([]);
@@ -309,6 +312,8 @@ export default function TablesPage() {
     }
   };
 
+  if (!allowed) return null;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -402,7 +407,7 @@ export default function TablesPage() {
 
                 {/* Actions */}
                 <div className="px-4 py-2 border-t border-border flex justify-end gap-2">
-                  {(table.status === 'occupied' || table.status === 'reserved') && (
+                  {(table.status === 'occupied' || table.status === 'reserved' || table.status === 'precheck') && (
                     <button onClick={() => updateStatus(table.id, 'available')}
                       className="text-xs text-brand hover:text-brand-hover font-medium">
                       {tTables('markAvailable')}
@@ -440,7 +445,7 @@ export default function TablesPage() {
                 <p className="text-xs text-yellow-600 mt-0.5"><Ltr>{table.reservation_customer_phone}</Ltr></p>
               )}
 
-              {(table.status === 'occupied' || table.status === 'reserved') && (
+              {(table.status === 'occupied' || table.status === 'reserved' || table.status === 'precheck') && (
                 <button onClick={() => updateStatus(table.id, 'available')}
                   className="mt-3 text-xs text-brand hover:text-brand-hover font-medium">
                   {tTables('markAvailable')}

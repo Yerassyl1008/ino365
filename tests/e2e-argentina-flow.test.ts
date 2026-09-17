@@ -97,8 +97,8 @@ async function runLegacyOnboardingInIsolation(legacyTestDir) {
 
   try {
     seedSetupProfile(db2, 'demo', 'finedine', 'IN');
-    const india = db2.prepare("SELECT id FROM products WHERE id = 'prod-demo-paneer-tikka'").get();
-    assert(!!india, 'legacy India demo seeds paneer tikka');
+    const india = db2.prepare("SELECT id FROM products WHERE id = 'prod-demo-shashlik-lamb'").get();
+    assert(!!india, 'legacy India demo seeds lamb shashlik');
     const burger = db2.prepare("SELECT id FROM products WHERE id = 'prod-demo-hamburguesa-clasica'").get();
     assert(!burger, 'legacy India demo does NOT seed the Argentina hamburger menu');
   } finally {
@@ -138,8 +138,8 @@ async function runArgentinaOnboarding(baseUrl, db) {
   const curSymbol = db.prepare("SELECT value FROM settings WHERE key = 'currency_symbol'").get();
   assertEqual(curSymbol.value, '$', 'DB currency_symbol = $ for ARS');
 
-  const butterChicken = db.prepare("SELECT id FROM products WHERE id = 'prod-demo-butter-chicken'").get();
-  assert(!!butterChicken, 'AR + English demo still seeds the English catalog');
+  const shashlik = db.prepare("SELECT id FROM products WHERE id = 'prod-demo-shashlik-lamb'").get();
+  assert(!!shashlik, 'AR + English demo still seeds the English catalog');
   const sofia = db.prepare("SELECT id, name, country_code FROM customers WHERE id = 'cust-demo-1'").get();
   assert(!!sofia, 'Argentina demo seeds a demo customer');
   assertEqual(sofia.country_code, '+54', 'demo customer uses +54 country code');
@@ -147,8 +147,8 @@ async function runArgentinaOnboarding(baseUrl, db) {
   const staffName = db.prepare("SELECT name FROM users WHERE id = 'user-demo-manager'").get();
   assertEqual(staffName.name, 'Demo Manager', 'demo staff uses English names when UI language is English');
 
-  const cuisine = db.prepare("SELECT name FROM categories WHERE id = 'cat-demo-main'").get();
-  assertEqual(cuisine.name, 'Main Course', 'demo category uses English names when UI language is English');
+  const cuisine = db.prepare("SELECT name FROM categories WHERE id = 'cat-demo-grill'").get();
+  assertEqual(cuisine.name, 'Shashlik', 'demo category uses English names when UI language is English');
 }
 
 async function runArgentinaSettings(baseUrl, db) {

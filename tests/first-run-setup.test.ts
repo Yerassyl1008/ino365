@@ -214,6 +214,10 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(profileRefreshes, 1, 'setup immediately refreshes the completed store profile in FloAdmin');
     assert.equal(count('categories'), 2, 'express setup seeds minimal categories');
     assert.equal(count('products'), 4, 'express setup seeds minimal products');
+    const cafeScopes = getDatabase().prepare(
+      "SELECT DISTINCT business_scope AS scope FROM categories WHERE deleted_at IS NULL"
+    ).all() as Array<{ scope: string }>;
+    assert.ok(cafeScopes.every((row) => row.scope === 'restaurant'), 'express cafe categories are cafe-scoped');
     assert.equal(count('tables'), 0, 'qsr express setup does not seed dine-in tables');
     assert.equal(count('customers'), 0, 'express setup does not seed demo customers');
     console.log('   ✓ setup endpoint creates owner and applies express QSR setup');
@@ -319,6 +323,70 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     console.log('   ✓ setup persists an explicit cloud_sync_enabled + custom cloud_server_url');
   } finally {
     await new Promise<void>((resolve) => cloudServer.close(() => resolve()));
+  }
+
+  console.log('\n   Retail / shop first-run setup');
+  closeDatabase();
+  fs.rmSync(testDir, { recursive: true, force: true });
+  testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-first-run-retail-'));
+  initDatabase();
+
+  const retailApi = express();
+  retailApi.use(express.json());
+  retailApi.use('/api/auth', authRoutes);
+  let retailServer: http.Server;
+  try {
+    retailServer = await listen(retailApi);
+  } catch (error: any) {
+    if (error?.code === 'EPERM' || error?.code === 'EACCES') {
+      console.log('   ⚠ Skipping retail setup assertions: local port binding is blocked in this environment.');
+      return;
+    }
+    throw error;
+  }
+  const retailAddress = retailServer.address() as { port: number };
+  const retailBaseUrl = `http://127.0.0.1:${retailAddress.port}/api/auth`;
+
+  try {
+    const retail = await request(retailBaseUrl, '/setup/initialize', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'Shop Owner',
+        email: 'shop-owner@example.com',
+        password: 'TestPass123',
+        business_type: 'retail',
+        business_name: 'Corner Shop',
+        setup_profile: 'express',
+        service_model: 'finedine',
+        terms_accepted: true,
+        country: 'KZ',
+        currency: 'KZT',
+        timezone: 'Asia/Almaty',
+      }),
+    });
+    assert.equal(retail.status, 200, `retail setup succeeds (got ${retail.status}, ${JSON.stringify(retail.data)})`);
+    assert.equal(setting('business_type'), 'retail');
+    assert.equal(setting('business_name'), 'Corner Shop');
+    assert.equal(setting('billing_type'), 'prepaid', 'shop setup is prepaid counter checkout');
+    assert.equal(setting('tables_required'), 'false', 'shop setup does not require tables');
+    assert.equal(setting('service_model'), 'qsr', 'shop setup ignores FineDine and stores a counter service model');
+    assert.equal(setting('kds_enabled'), 'false', 'shop setup disables the kitchen display');
+    assert.equal(setting('server_app_enabled'), 'false', 'shop setup disables the waiter app');
+    assert.equal(setting('kot_printing_enabled'), 'false', 'shop setup disables kitchen tickets');
+    assert.equal(count('tables'), 0, 'shop setup never seeds dine-in tables');
+    assert.equal(count('categories'), 3, 'express shop setup seeds grocery, drinks, and household');
+    assert.equal(count('products'), 5, 'express shop setup seeds barcode products');
+    const tracked = getDatabase().prepare(
+      'SELECT COUNT(*) AS count FROM products WHERE track_inventory = 1 AND barcode IS NOT NULL AND deleted_at IS NULL'
+    ).get() as { count: number };
+    assert.equal(tracked.count, 5, 'express shop products track inventory and have barcodes');
+    const shopScopes = getDatabase().prepare(
+      "SELECT DISTINCT business_scope AS scope FROM categories WHERE deleted_at IS NULL"
+    ).all() as Array<{ scope: string }>;
+    assert.ok(shopScopes.every((row) => row.scope === 'retail'), 'express shop categories are shop-scoped');
+    console.log('   ✓ retail setup creates a shop with product stock and no hall/kitchen');
+  } finally {
+    await new Promise<void>((resolve) => retailServer.close(() => resolve()));
   }
 }
 

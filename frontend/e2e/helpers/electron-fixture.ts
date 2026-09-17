@@ -67,7 +67,7 @@ export async function injectElectronFixture(
     const ipcError: ElectronIpcError = { error: 'unsupported in browser fixture' };
     const appInfo: ElectronAppInfo = {
       version: 'e2e',
-      name: 'Flo Cafe',
+      name: 'KorgenKassa',
       electron: 'fixture',
       node: 'fixture',
       platform: config.platform ?? 'darwin',

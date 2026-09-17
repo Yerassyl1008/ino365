@@ -7,10 +7,10 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
-import { getDatabase, now } from '../db';
+import { getDatabase, now, verifyPin } from '../db';
 import { requireRole, validatePassword, authRateLimit, invalidateUserAuthCache } from '../middleware/security';
 import { isValidEmail } from './auth';
-import { ROLE_ACCESS, ROLE_KEYS, OPERATIONAL_ROLES, hasRole } from '../../shared/role-permissions';
+import { ROLE_ACCESS, ROLE_KEYS, OPERATIONAL_ROLES, hasRole, pinAllowedForRole } from '../../shared/role-permissions';
 
 const router = Router();
 
@@ -33,6 +33,13 @@ function hasNonEmptyPin(pin: unknown): boolean {
 
 function isValidPin(pin: unknown): boolean {
   return /^\d{4,6}$/.test(String(pin));
+}
+
+function pinTakenByAnotherUser(db: ReturnType<typeof getDatabase>, pin: unknown, excludeUserId?: string): boolean {
+  const rows = excludeUserId
+    ? db.prepare('SELECT id, pin_hash FROM users WHERE pin_hash IS NOT NULL AND id != ?').all(excludeUserId)
+    : db.prepare('SELECT id, pin_hash FROM users WHERE pin_hash IS NOT NULL').all();
+  return (rows as { id: string; pin_hash: string }[]).some((row) => verifyPin(row.pin_hash, String(pin)));
 }
 
 function normalizeStaffEmail(email: unknown): string {
@@ -123,14 +130,18 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (req
       return res.status(403).json({ error: `Managers can only create operational staff accounts (${OPERATIONAL_ROLES.join(', ')})` });
     }
 
-    if (isOperationalRole(role) && hasNonEmptyPin(pin)) {
-      return res.status(400).json({ error: 'PINs are only permitted for owner and manager roles' });
+    if (hasNonEmptyPin(pin) && !pinAllowedForRole(role)) {
+      return res.status(400).json({ error: 'PINs are not permitted for the chef role' });
     }
     if (hasNonEmptyPin(pin) && !isValidPin(pin)) {
       return res.status(400).json({ error: 'PIN must be between 4 and 6 numeric digits' });
     }
 
     const db = getDatabase();
+
+    if (hasNonEmptyPin(pin) && pinTakenByAnotherUser(db, pin)) {
+      return res.status(400).json({ error: 'PIN is already assigned to another staff member' });
+    }
 
     const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
     if (existing) {
@@ -191,11 +202,14 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (r
     }
 
     const targetRole = role ?? member.role;
-    if (isOperationalRole(targetRole) && hasNonEmptyPin(pin)) {
-      return res.status(400).json({ error: 'PINs are only permitted for owner and manager roles' });
+    if (hasNonEmptyPin(pin) && !pinAllowedForRole(targetRole)) {
+      return res.status(400).json({ error: 'PINs are not permitted for the chef role' });
     }
     if (hasNonEmptyPin(pin) && !isValidPin(pin)) {
       return res.status(400).json({ error: 'PIN must be between 4 and 6 numeric digits' });
+    }
+    if (hasNonEmptyPin(pin) && pinTakenByAnotherUser(db, pin, member.id)) {
+      return res.status(400).json({ error: 'PIN is already assigned to another staff member' });
     }
 
     if (emailProvided && !normalizedEmail) {
@@ -216,7 +230,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (r
     }
 
     const hashedPassword = password ? bcrypt.hashSync(password, 10) : member.password;
-    const hashedPin = isOperationalRole(targetRole)
+    const hashedPin = !pinAllowedForRole(targetRole)
       ? null
       : pin !== undefined
         ? (hasNonEmptyPin(pin) ? bcrypt.hashSync(String(pin), 10) : null)

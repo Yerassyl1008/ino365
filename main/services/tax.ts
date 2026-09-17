@@ -2,6 +2,7 @@ import Decimal from 'decimal.js';
 import { getDatabase, getSettingValue } from '../db';
 import { getBundledCountryPack } from '../tax-packs/bundled';
 import { getCountryByCode, type TaxIdFormat } from '../countries';
+import { computeServiceChargeAmount } from './service-charge';
 
 interface TenantInfo {
   country: string;
@@ -706,9 +707,9 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       customer_id,
       packaging_charge,
       delivery_charge,
-      service_charge,
       discount_type,
       discount_value,
+      order_type,
     } = req.body;
 
     if (!Array.isArray(items) || items.length === 0) {
@@ -798,7 +799,6 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
     };
     const packaging = normalizeCharge(packaging_charge);
     const delivery = normalizeCharge(delivery_charge);
-    const service = normalizeCharge(service_charge);
 
     let discountAmount = new Decimal(0);
     if (discount_type !== undefined || discount_value !== undefined) {
@@ -837,6 +837,12 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       .mul(taxRatio)
       .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
       .toNumber();
+
+    const service = computeServiceChargeAmount(
+      typeof order_type === 'string' ? order_type : 'dine_in',
+      totalSubtotal,
+      discountAmount.toNumber(),
+    );
 
     const chargeCategories = getConfiguredChargeTaxCategories(tenantInfo.country);
     const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, {

@@ -1,8 +1,15 @@
 import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
-import { getDatabase, now, generateShortId } from '../db';
+import { getDatabase, now, generateShortId, getSettingValue } from '../db';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
+import { ensureCatalogForBusinessType } from '../services/catalog-templates';
+import {
+  CATEGORY_SCOPE_SQL,
+  categoryVisibleForBusiness,
+  isBusinessScope,
+  normalizeCatalogBusinessType,
+} from '../../shared/catalog-scope';
 
 const router = Router();
 const categoryWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
@@ -77,6 +84,9 @@ function serializeCategory(category: any): any {
 router.get('/', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
+    if (getSettingValue('onboarding_completed') === 'true') {
+      ensureCatalogForBusinessType(db, getSettingValue('business_type'), getSettingValue('language') || undefined);
+    }
     let query = 'SELECT * FROM categories WHERE deleted_at IS NULL';
     const params: any[] = [];
 
@@ -91,6 +101,12 @@ router.get('/', (req: Request, res: Response) => {
       params.push(req.query.parent_id);
     }
 
+    const includeAllScopes = req.query.all === 'true' || req.query.all === '1';
+    if (!includeAllScopes) {
+      query += ` AND ${CATEGORY_SCOPE_SQL}`;
+      params.push(normalizeCatalogBusinessType(getSettingValue('business_type')));
+    }
+
     query += ' ORDER BY sort_order, name';
 
     const categories = db.prepare(query).all(...params) as any[];
@@ -101,8 +117,12 @@ router.get('/', (req: Request, res: Response) => {
       const children = db.prepare(
         `SELECT * FROM categories
          WHERE parent_id IN (${placeholders}) AND deleted_at IS NULL
+         ${includeAllScopes ? '' : `AND ${CATEGORY_SCOPE_SQL}`}
          ORDER BY parent_id, sort_order, name`
-      ).all(...categories.map((cat) => cat.id)) as any[];
+      ).all(
+        ...categories.map((cat) => cat.id),
+        ...(includeAllScopes ? [] : [normalizeCatalogBusinessType(getSettingValue('business_type'))]),
+      ) as any[];
       for (const child of children) {
         const rows = childRowsByParent.get(child.parent_id) || [];
         rows.push(child);
@@ -125,8 +145,12 @@ router.get('/', (req: Request, res: Response) => {
 router.get('/:id', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const category = db.prepare('SELECT * FROM categories WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+    const category = db.prepare('SELECT * FROM categories WHERE id = ? AND deleted_at IS NULL').get(req.params.id) as { business_scope?: string } | undefined;
     if (!category) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+    const mode = normalizeCatalogBusinessType(getSettingValue('business_type'));
+    if (!categoryVisibleForBusiness(category.business_scope, mode)) {
       return res.status(404).json({ error: 'Category not found' });
     }
 
@@ -157,9 +181,12 @@ function createCategory(req: Request, res: Response) {
 
     const slug = slugForName(categoryName);
     const id = generateShortId('categories');
+    const businessScope = isBusinessScope(req.body.business_scope)
+      ? req.body.business_scope
+      : normalizeCatalogBusinessType(getSettingValue('business_type'));
     db.prepare(`
-      INSERT INTO categories (id, name, slug, description, parent_id, sort_order, is_active, color, icon, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO categories (id, name, slug, description, parent_id, sort_order, is_active, color, icon, business_scope, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       categoryName,
@@ -170,6 +197,7 @@ function createCategory(req: Request, res: Response) {
       is_active !== false ? 1 : 0,
       normalizeOptionalString(color),
       normalizeOptionalString(icon),
+      businessScope,
       now(),
       now()
     );
@@ -186,7 +214,7 @@ router.post('/', categoryWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager
 
 function updateCategory(req: Request, res: Response) {
   try {
-    const { name, description, parent_id, sort_order, is_active, color, icon } = req.body;
+    const { name, description, parent_id, sort_order, is_active, color, icon, business_scope } = req.body;
     const db = getDatabase();
     const categoryId = String(req.params.id);
 
@@ -207,6 +235,10 @@ function updateCategory(req: Request, res: Response) {
       }
     }
 
+    if (hasOwn(req.body, 'business_scope') && !isBusinessScope(business_scope)) {
+      return res.status(400).json({ error: 'Invalid business_scope' });
+    }
+
     const slug = categoryName ? slugForName(categoryName) : (category as any).slug;
     const activeInt = is_active !== undefined ? (is_active ? 1 : 0) : undefined;
 
@@ -220,6 +252,7 @@ function updateCategory(req: Request, res: Response) {
       is_active = CASE WHEN @has_is_active = 1 THEN @is_active ELSE is_active END,
       color = CASE WHEN @has_color = 1 THEN @color ELSE color END,
       icon = CASE WHEN @has_icon = 1 THEN @icon ELSE icon END,
+      business_scope = CASE WHEN @has_business_scope = 1 THEN @business_scope ELSE business_scope END,
       updated_at = @updated_at
       WHERE id = @id
     `).run({
@@ -238,6 +271,8 @@ function updateCategory(req: Request, res: Response) {
       color: normalizeOptionalString(color),
       has_icon: hasOwn(req.body, 'icon') ? 1 : 0,
       icon: normalizeOptionalString(icon),
+      has_business_scope: hasOwn(req.body, 'business_scope') ? 1 : 0,
+      business_scope: isBusinessScope(business_scope) ? business_scope : null,
       updated_at: now(),
       id: categoryId,
     });

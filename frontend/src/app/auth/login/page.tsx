@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useTranslations, type AppConfig } from 'use-intl';
+import { useTranslations } from 'use-intl';
 import { getLandingPage } from '@/components/layout/AuthGuard';
 import { useAuthStore, StorageUnavailableError } from '@/store/auth';
 import { parseLoginFailure } from '@/lib/login-errors';
@@ -12,19 +12,12 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import toast from 'react-hot-toast';
 import { Eye, EyeOff } from 'lucide-react';
-import { ROLE_LABEL_KEYS } from '@/lib/i18n-enums';
-
-// Backend enum → leaf key maps for the tenant picker.
-type BusinessTypeKey = keyof AppConfig['Messages']['businessType'];
-
-const BUSINESS_TYPE_LEAF_KEYS: Record<string, BusinessTypeKey> = {
-  restaurant: 'restaurant',
-};
+import { ROLE_LABEL_KEYS, BUSINESS_TYPE_LABEL_KEYS } from '@/lib/i18n-enums';
 
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login, selectTenant, user, tenants, currentTenant, loadFromStorage } = useAuthStore();
+  const { login, pinLogin, selectTenant, user, tenants, currentTenant, loadFromStorage } = useAuthStore();
   const t = useTranslations('auth');
   const tStaff = useTranslations('staff');
   const tBusinessType = useTranslations('businessType');
@@ -36,6 +29,8 @@ function LoginContent() {
   const [dbError, setDbError] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [mode, setMode] = useState<'pin' | 'email'>('pin');
+  const [pin, setPin] = useState('');
 
   useEffect(() => {
     fetch('/api/auth/setup/status')
@@ -77,9 +72,37 @@ function LoginContent() {
     // Deliberately no auto-select here: it raced manual selection through
     // selectTenant() and the shared loading flag for one login attempt (#229).
     if (user && currentTenant) {
-      router.push(getLandingPage());
+      router.push(getLandingPage(currentTenant?.role, currentTenant?.business_type));
     }
   }, [user, currentTenant, router]);
+
+  const applyLoginFailure = (err: unknown) => {
+    if (err instanceof StorageUnavailableError) {
+      setLoginError(t('storageUnavailable'));
+      return;
+    }
+    const failure = parseLoginFailure(err);
+    if (failure.status === 401) {
+      const remaining = failure.attemptsRemaining;
+      if (remaining === 0) {
+        const mins = failure.lockoutMinutes ?? 15;
+        setLoginError(t('lockedOut', { minutes: mins }));
+      } else if (typeof remaining === 'number' && remaining < 4) {
+        setLoginError(
+          (mode === 'pin' ? t('invalidPin') : t('invalidCredentials')) + ' ' +
+          t('attemptsRemaining', { count: remaining })
+        );
+      } else {
+        setLoginError(mode === 'pin' ? t('invalidPin') : t('invalidCredentials'));
+      }
+    } else if (failure.status === 429) {
+      setLoginError(t('lockedOut', { minutes: 15 }));
+    } else if (failure.status === undefined) {
+      setLoginError(t('connectionFailed'));
+    } else {
+      setDbError(t('loginFailed'));
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,40 +112,31 @@ function LoginContent() {
       await login(email, password, rememberMe);
       toast.success(t('signInSuccess'));
     } catch (err: unknown) {
-      if (err instanceof StorageUnavailableError) {
-        // Server login succeeded but the session could not be persisted.
-        setLoginError(t('storageUnavailable'));
-      } else {
-        const failure = parseLoginFailure(err);
-        if (failure.status === 401) {
-          const remaining = failure.attemptsRemaining;
-          if (remaining === 0) {
-            // Just got locked out
-            const mins = failure.lockoutMinutes ?? 15;
-            setLoginError(t('lockedOut', { minutes: mins }));
-          } else if (typeof remaining === 'number' && remaining < 4) {
-            // Warn only when getting close (≤ 4 remaining to avoid noise on first attempt)
-            setLoginError(
-              t('invalidCredentials') + ' ' +
-              t('attemptsRemaining', { count: remaining })
-            );
-          } else {
-            setLoginError(t('invalidCredentials'));
-          }
-        } else if (failure.status === 429) {
-          // Middleware-level lockout (authRateLimit window exhausted)
-          setLoginError(t('lockedOut', { minutes: 15 }));
-        } else if (failure.status === undefined) {
-          // No HTTP response at all: the server was unreachable (network).
-          setLoginError(t('connectionFailed'));
-        } else {
-          // Other server-side failures belong under the database/setup banner.
-          setDbError(t('loginFailed'));
-        }
-      }
+      applyLoginFailure(err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePinLogin = async (nextPin?: string) => {
+    const value = nextPin ?? pin;
+    if (value.length < 4 || loading) return;
+    setLoading(true);
+    setLoginError(null);
+    try {
+      await pinLogin(value, rememberMe);
+      toast.success(t('signInSuccess'));
+    } catch (err: unknown) {
+      setPin('');
+      applyLoginFailure(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const appendPinDigit = (digit: string) => {
+    if (loading) return;
+    setPin((current) => (current + digit).slice(0, 6));
   };
 
 
@@ -139,7 +153,9 @@ function LoginContent() {
               <p className="text-muted-foreground text-sm mb-6">{t('selectBusinessHint')}</p>
               <div className="space-y-3">
                 {tenants.map((tenant) => {
-                  const businessTypeKey = tenant.business_type ? BUSINESS_TYPE_LEAF_KEYS[tenant.business_type] : undefined;
+                  const businessTypeKey = tenant.business_type
+                    ? BUSINESS_TYPE_LABEL_KEYS[tenant.business_type as keyof typeof BUSINESS_TYPE_LABEL_KEYS]
+                    : undefined;
                   const roleKey = tenant.role ? ROLE_LABEL_KEYS[tenant.role] : undefined;
                   return (
                     <button
@@ -177,15 +193,74 @@ function LoginContent() {
         )}
         <Card>
           <CardContent className="pt-6">
+            <div className="mb-4 grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
+              <button
+                type="button"
+                onClick={() => { setMode('pin'); setLoginError(null); }}
+                className={`min-h-11 rounded-md text-sm font-medium ${mode === 'pin' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground'}`}
+              >
+                {t('pinTab')}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMode('email'); setLoginError(null); }}
+                className={`min-h-11 rounded-md text-sm font-medium ${mode === 'email' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground'}`}
+              >
+                {t('emailTab')}
+              </button>
+            </div>
+            {mode === 'pin' ? (
+              <form
+                onSubmit={(e) => { e.preventDefault(); void handlePinLogin(); }}
+                className="space-y-4"
+              >
+                <p className="text-sm text-muted-foreground text-center">{t('pinLoginHint')}</p>
+                <div className="rounded-lg border border-border px-4 py-3 text-center font-mono text-2xl tracking-[0.4em] text-foreground" dir="ltr">
+                  {pin ? '•'.repeat(pin.length) : '••••'}
+                </div>
+                <div className="grid grid-cols-3 gap-2" dir="ltr">
+                  {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'].map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      disabled={loading}
+                      onClick={() => {
+                        if (key === 'C') setPin('');
+                        else if (key === '⌫') setPin((current) => current.slice(0, -1));
+                        else appendPinDigit(key);
+                      }}
+                      className="min-h-12 rounded-xl border border-border bg-card text-lg font-semibold text-foreground hover:bg-muted disabled:opacity-50"
+                    >
+                      {key === 'C' ? t('pinClear') : key}
+                    </button>
+                  ))}
+                </div>
+                <label className="flex items-center gap-2 text-sm text-muted-foreground select-none cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="rounded border-input text-primary focus:ring-primary"
+                  />
+                  {t('rememberMe')}
+                </label>
+                {loginError && (
+                  <p className="text-sm text-destructive text-center">{loginError}</p>
+                )}
+                <Button type="submit" disabled={loading || pin.length < 4} className="w-full" size="lg">
+                  {loading ? t('signingIn') : t('pinLogin')}
+                </Button>
+              </form>
+            ) : (
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">{t('email')}</Label>
-                <Input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('emailPlaceholder')} dir="ltr" required />
+                <Input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('emailPlaceholder')} dir="ltr" required className="text-foreground caret-foreground" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">{t('password')}</Label>
                 <div className="relative">
-                  <Input id="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('passwordPlaceholder')} className="pe-10" required />
+                  <Input id="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('passwordPlaceholder')} className="pe-10 text-foreground caret-foreground" required />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
@@ -219,6 +294,7 @@ function LoginContent() {
                 {t('forgotPasswordLink')}
               </button>
             </form>
+            )}
           </CardContent>
         </Card>
       </div>

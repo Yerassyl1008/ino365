@@ -27,7 +27,7 @@ import {
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
-const DEFAULT_SIDEBAR_WIDTH = 200
+const DEFAULT_SIDEBAR_WIDTH = 240
 const MIN_SIDEBAR_WIDTH = 140
 const MAX_SIDEBAR_WIDTH = 380
 const SIDEBAR_WIDTH_STORAGE_KEY = "flo_sidebar_width"
@@ -82,7 +82,9 @@ function SidebarProvider({
       if (stored) {
         const parsed = parseInt(stored, 10)
         if (!isNaN(parsed) && parsed >= MIN_SIDEBAR_WIDTH && parsed <= MAX_SIDEBAR_WIDTH) {
-          return parsed
+          // Previous default was too narrow for single-line section titles like
+          // "Аналитика и отчёты"; migrate that stored default to the new width.
+          return parsed === 200 ? DEFAULT_SIDEBAR_WIDTH : parsed
         }
       }
     } catch {
@@ -501,7 +503,7 @@ function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
       data-slot="sidebar-content"
       data-sidebar="content"
       className={cn(
-        "flex min-h-0 flex-1 flex-col gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden",
+        "flex min-h-0 flex-1 flex-col overflow-auto group-data-[collapsible=icon]:overflow-hidden",
         className
       )}
       {...props}

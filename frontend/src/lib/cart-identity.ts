@@ -45,7 +45,13 @@ function canonicalize(value: unknown): string {
  * lines. Add-on arrays are order-insensitive, while every selected add-on
  * field and the exact note text remain part of the identity.
  */
-export function generateCartItemId(productId: number | string, addons: Addon[], specialInstructions: string): string {
+export function generateCartItemId(
+  productId: number | string,
+  addons: Addon[],
+  specialInstructions: string,
+  guestSeat = 1,
+  course = 1,
+): string {
   const normalizedAddons = addons.map((addon) => ({
     ...addon,
     quantity: addon.quantity || 1,
@@ -58,14 +64,20 @@ export function generateCartItemId(productId: number | string, addons: Addon[], 
     return 0;
   });
 
-  return `cart-v2:${canonicalize({ productId, addons: sortedAddons, specialInstructions })}`;
+  return `cart-v2:${canonicalize({ productId, addons: sortedAddons, specialInstructions, guestSeat, course })}`;
 }
 
 /** Normalize persisted/held cart lines to the current identity format. */
 export function normalizeCartItems(items: CartItem[]): CartItem[] {
   const normalized: CartItem[] = [];
   for (const item of items) {
-    const id = generateCartItemId(item.product.id, item.addons || [], item.special_instructions || '');
+    const id = generateCartItemId(
+      item.product.id,
+      item.addons || [],
+      item.special_instructions || '',
+      item.guest_seat || 1,
+      item.course || 1,
+    );
     const existing = normalized.find((candidate) => candidate.id === id);
     if (existing) {
       existing.quantity += item.quantity;

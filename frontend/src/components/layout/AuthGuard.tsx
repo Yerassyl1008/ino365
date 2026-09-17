@@ -6,8 +6,29 @@ import { useTranslations } from 'use-intl';
 import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
 
-export function getLandingPage(): string {
+import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
+
+export function getLandingPage(role?: string | null, businessType?: string | null): string {
+  if (businessType !== 'retail' && hasRole(role, ROLE_ACCESS.kitchen) && !hasRole(role, ROLE_ACCESS.sales)) {
+    return '/kds';
+  }
+  if (hasRole(role, ROLE_ACCESS.owner)) {
+    return '/dashboard';
+  }
   return '/pos';
+}
+
+export function useRestrictBusinessType(allowed: 'restaurant' | 'retail', fallback: string): boolean {
+  const { currentTenant } = useAuthStore();
+  const router = useRouter();
+  const type = currentTenant?.business_type ?? 'restaurant';
+  const allowedHere = type === allowed;
+
+  useEffect(() => {
+    if (!allowedHere) router.replace(fallback);
+  }, [allowedHere, fallback, router]);
+
+  return allowedHere;
 }
 
 const PUBLIC_PATHS = ['/kds', '/kds-standalone', '/server-standalone', '/auth/login', '/auth/register', '/auth/recover', '/setup'];

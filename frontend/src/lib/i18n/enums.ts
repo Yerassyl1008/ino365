@@ -61,6 +61,7 @@ export const TABLE_STATUS_LABEL_KEYS = {
   reserved: 'statusReserved',
   held: 'statusHeld',
   cleaning: 'statusCleaning',
+  precheck: 'statusPrecheck',
 } as const satisfies Record<Table['status'], TablesKey>;
 
 /** Tenant/business status → label. */
@@ -70,10 +71,11 @@ export const TENANT_STATUS_LABEL_KEYS = {
   suspended: 'inactive',
 } as const satisfies Record<'active' | 'inactive' | 'suspended', CommonKey>;
 
-/** Business type → label. Currently only 'restaurant' is valid. */
+/** Business type → label. */
 export const BUSINESS_TYPE_LABEL_KEYS = {
   restaurant: 'restaurant',
-} as const satisfies Record<'restaurant', BusinessTypeKey>;
+  retail: 'retail',
+} as const satisfies Record<'restaurant' | 'retail', BusinessTypeKey>;
 
 /** Payment status → label. */
 export const PAYMENT_STATUS_LABEL_KEYS = {

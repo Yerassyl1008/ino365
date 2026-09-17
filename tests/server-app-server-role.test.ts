@@ -61,12 +61,28 @@ async function main() {
   initDatabase();
   const db = getDatabase();
   const passwordHash = bcrypt.hashSync('ServerPass123!', 10);
+  const pins: Record<string, string> = {
+    owner: '9753',
+    manager: '1357',
+    server: '2468',
+    cashier: '8642',
+  };
 
   for (const role of ['owner', 'manager', 'cashier', 'chef', 'server']) {
+    const pin = pins[role];
     db.prepare(`
-      INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-    `).run(`server-app-${role}`, `Server App ${role}`, `${role}@server-app.test`, passwordHash, role, now(), now());
+      INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+    `).run(
+      `server-app-${role}`,
+      `Server App ${role}`,
+      `${role}@server-app.test`,
+      passwordHash,
+      role,
+      pin ? bcrypt.hashSync(pin, 10) : null,
+      now(),
+      now(),
+    );
   }
 
   await startServerApp();
@@ -95,6 +111,20 @@ async function main() {
       assert.equal(me.status, 200, `${role} token remains valid on /api/auth/me`);
       assert.equal(me.body.user.role, role, `/api/auth/me returns ${role} role`);
     }
+
+    for (const role of ['server', 'manager', 'owner']) {
+      const pinLogin = await postJson(baseUrl, '/api/auth/pin-login', { pin: pins[role] });
+      assert.equal(pinLogin.status, 200, `${role} can PIN-login to Server App`);
+      assert.equal(pinLogin.body.user.role, role, `PIN login returns ${role} role`);
+      assert.ok(pinLogin.body.access_token, `PIN login returns a token for ${role}`);
+    }
+
+    const cashierPin = await postJson(baseUrl, '/api/auth/pin-login', { pin: pins.cashier });
+    assert.equal(cashierPin.status, 403, 'cashier PIN cannot log in to Server App');
+    assert.match(String(cashierPin.body.error), /Only server, manager, or owner/i);
+
+    const badPin = await postJson(baseUrl, '/api/auth/pin-login', { pin: '0000' });
+    assert.equal(badPin.status, 401, 'unknown PIN is rejected');
   } finally {
     await stopServerApp();
     closeDatabase();

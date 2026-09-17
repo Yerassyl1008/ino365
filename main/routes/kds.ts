@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isKdsStationItemAllowed, now, attachEffectiveAddons, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, projectKdsStation, withTxn } from '../db';
+import { getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isKdsStationItemAllowed, now, attachEffectiveAddons, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, activeKitchenOrderIdsSql, kdsStaleCompletedCutoff, projectKdsItem, projectKdsOrder, projectKdsStation, withTxn } from '../db';
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { requireRole, requireKdsEnabled, requireKdsEnabledOr404, isTokenRevoked, isTokenStale } from '../middleware/security';
@@ -93,11 +93,7 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
     // of scanning all orders with a correlated subquery.
     let query = `
       WITH active_ids AS (
-        SELECT id FROM orders WHERE status IN ('pending','preparing','ready','served')
-        UNION
-        SELECT o.id FROM orders o
-        JOIN order_items oi ON oi.order_id = o.id AND oi.status NOT IN ('served','cancelled')
-        WHERE o.status NOT IN ('pending','preparing','ready','served','cancelled')
+        ${activeKitchenOrderIdsSql()}
       )
       SELECT o.*, t.number as table_name, t.floor, t.section, t.kitchen_station_id
       FROM orders o
@@ -314,6 +310,7 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
       WHERE oi.status NOT IN ('completed', 'cancelled', 'served', 'void_adjustment', 'refunded')
         AND (oi.status != 'voided' OR oi.voided_at IS NULL OR oi.voided_at > ?)
         AND o.status != 'cancelled'
+        AND (o.status != 'completed' OR o.completed_at IS NULL OR o.completed_at > '${kdsStaleCompletedCutoff()}')
     `;
 
     const params: any[] = [voidedCutoff];

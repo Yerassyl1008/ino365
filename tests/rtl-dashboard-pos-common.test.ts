@@ -55,6 +55,13 @@ const frontendRequire = Module.createRequire(path.join(ROOT, 'frontend/package.j
 const SCREEN_FILES = [
   'frontend/src/app/(dashboard)/pos/page.tsx',
   'frontend/src/app/(dashboard)/dashboard/page.tsx',
+  'frontend/src/app/(dashboard)/advisor/page.tsx',
+  'frontend/src/app/(dashboard)/analytics/sales/page.tsx',
+  'frontend/src/app/(dashboard)/analytics/abc/page.tsx',
+  'frontend/src/app/(dashboard)/analytics/staff/page.tsx',
+  'frontend/src/app/(dashboard)/analytics/products/page.tsx',
+  'frontend/src/app/(dashboard)/reports/financial/page.tsx',
+  'frontend/src/app/(dashboard)/reports/day-close/page.tsx',
   'frontend/src/app/(dashboard)/orders/page.tsx',
   'frontend/src/app/(dashboard)/products/page.tsx',
   'frontend/src/app/(dashboard)/customers/page.tsx',

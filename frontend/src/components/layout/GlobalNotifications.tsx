@@ -2,28 +2,31 @@ import { useEffect, useState } from 'react';
 import { AlertCircle, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useTranslations } from 'use-intl';
+import { useAuthStore } from '@/store/auth';
+import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
 import api from '@/lib/api';
 
 export default function GlobalNotifications() {
   const tCustomers = useTranslations('customers');
   const tCommon = useTranslations('common');
+  const { currentTenant } = useAuthStore();
   const [invalidPhonesCount, setInvalidPhonesCount] = useState(0);
+  const canViewAlerts = hasRole(currentTenant?.role, ROLE_ACCESS.sales);
 
   useEffect(() => {
+    if (!canViewAlerts) return;
     const fetchAlerts = () => {
       api.get('/customers/alerts')
         .then(res => {
           setInvalidPhonesCount(res.data?.invalidPhonesCount || 0);
         })
-        .catch(err => {
-          console.warn('[Notifications] Failed to fetch customer alerts:', err?.message);
-        });
+        .catch(() => {});
     };
 
     fetchAlerts();
     const interval = setInterval(fetchAlerts, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [canViewAlerts]);
 
   if (invalidPhonesCount === 0) return null;
 

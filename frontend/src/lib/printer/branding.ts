@@ -1,2 +1,3 @@
-export const RECEIPT_BRANDING_NAME = 'Powered by FloPOS';
-export const RECEIPT_BRANDING_URL = 'https://flopos.com';
+export const APP_NAME = 'KorgenKassa';
+export const RECEIPT_BRANDING_NAME = 'KorgenKassa';
+export const RECEIPT_BRANDING_URL = '';

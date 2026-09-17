@@ -329,6 +329,7 @@ async function run(): Promise<void> {
       'serverApp.title',
       'serverApp.disabledTitle',
       'serverApp.disabledHint',
+      'serverApp.pinLoginHint',
     ]) {
       const val = t(key);
       assert(

@@ -3,7 +3,7 @@ import '../globals.css';
 import { KdsHtmlLang } from '@/components/kds/KdsHtmlLang';
 
 export const metadata: Metadata = {
-  title: 'Flo KDS - Kitchen Display',
+  title: 'KorgenKassa KDS',
   description: 'Kitchen Display System',
 };
 

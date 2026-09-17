@@ -84,6 +84,8 @@ export const createHeldOrdersStore = (apiClient: HeldOrdersApiClient = api) => c
           });
         }
       } catch (err) {
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        if (status === 403) return;
         console.error('Failed to fetch held orders', err);
         throw err;
       }

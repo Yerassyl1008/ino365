@@ -45,6 +45,8 @@ export default function StaffPage() {
   const tSetup = useTranslations('setup');
   const { currentTenant } = useAuthStore();
   const canViewPermissionMatrix = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
+  const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
+  const staffRoles = isRestaurant ? VALID_ROLES : VALID_ROLES.filter((role) => role !== 'chef' && role !== 'server');
   const [staff, setStaff] = useState<Staff[]>([]);
   const [, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -86,7 +88,7 @@ export default function StaffPage() {
 
   const openAdd = () => {
     setEditingStaff(null);
-    setForm({ name: '', email: '', password: '', confirmPassword: '', role: 'server', pin: '' });
+    setForm({ name: '', email: '', password: '', confirmPassword: '', role: isRestaurant ? 'server' : 'cashier', pin: '' });
     setShowPassword(false);
     setShowPin(false);
     setShowForm(true);
@@ -187,6 +189,15 @@ export default function StaffPage() {
         <Button onClick={openAdd}><Plus size={16} className="me-1" /> {t('addButton')}</Button>
       </div>
 
+      <div className="mb-6 rounded-xl border border-border bg-muted/40 p-4 text-sm space-y-1.5">
+        <p className="font-medium text-foreground">{t('pinGuideTitle')}</p>
+        <p className="text-muted-foreground">{t('pinGuideLogin')}</p>
+        <p className="text-muted-foreground">{t('pinGuideTableside')}</p>
+        <p className="text-muted-foreground">{t('pinGuideApprove')}</p>
+        <p className="text-muted-foreground">{t('pinGuideChef')}</p>
+        <p className="text-muted-foreground">{t('pinGuideMaster')}</p>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {staff.map((s) => (
           <div key={s.id} className={`bg-card rounded-xl p-5 border ${s.is_active ? 'border-border' : 'border-border opacity-60'}`}>
@@ -269,15 +280,15 @@ export default function StaffPage() {
               <select
                 value={form.role} onChange={(e) => {
                   const role = e.target.value;
-                  setForm({ ...form, role, pin: hasRole(role, ROLE_ACCESS.ownerManager) ? form.pin : '' });
+                  setForm({ ...form, role, pin: role === 'chef' ? '' : form.pin });
                 }}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
               >
-                {VALID_ROLES.map((r) => (
+                {staffRoles.map((r) => (
                   <option key={r} value={r} disabled={editingLastActiveOwner && r !== 'owner'}>{roleLabel(r, t)}</option>
                 ))}
               </select>
-              {hasRole(form.role, ROLE_ACCESS.ownerManager) && (
+              {form.role !== 'chef' && (
                 <div>
                   <div className="relative">
                     <input
@@ -293,7 +304,9 @@ export default function StaffPage() {
                       {showPin ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">{t('pinHint')}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {form.role === 'owner' || form.role === 'manager' ? t('pinHintManager') : t('pinHint')}
+                  </p>
                 </div>
               )}
               <Button type="submit" className="w-full">{editingStaff ? t('updateButton') : t('addButton')}</Button>

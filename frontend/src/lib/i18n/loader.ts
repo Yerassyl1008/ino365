@@ -16,7 +16,7 @@ export type Messages = Record<string, unknown>;
  *   language share a single promise, and failed loads are retried on the
  *   next request (the failed promise is removed from the in-flight map).
  *
- * All chunks are packaged local assets served by FloCafe's embedded
+ * All chunks are packaged local assets served by KorgenKassa's embedded
  * localhost server — zero external translation network calls.
  */
 const messageCache = new Map<Language, Messages>();

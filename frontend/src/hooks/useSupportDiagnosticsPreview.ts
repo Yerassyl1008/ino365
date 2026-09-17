@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import api from '@/lib/api';
 
 /**
- * The system diagnostics fields FloCafe's local backend attaches to a
+ * The system diagnostics fields KorgenKassa's local backend attaches to a
  * support ticket on submit (device, app version, cloud sync status, etc).
  * Fetched from the same code path the submit route uses, so a "here's
  * exactly what gets sent" preview can never drift from what's actually sent.

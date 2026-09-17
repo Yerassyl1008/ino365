@@ -18,8 +18,8 @@ interface OrderItemRow {
 router.patch('/:id/status', requireKdsEnabled, (req: Request, res: Response) => {
   try {
     const role = (req as any).user?.role;
-    if (!hasRole(role, ROLE_ACCESS.kitchen)) {
-      return res.status(403).json({ error: 'Only chef, manager, or owner can update item status' });
+    if (!hasRole(role, ROLE_ACCESS.orderStatus)) {
+      return res.status(403).json({ error: 'Not authorized to update item status' });
     }
 
     const itemId = req.params.id;
@@ -49,7 +49,9 @@ router.patch('/:id/status', requireKdsEnabled, (req: Request, res: Response) => 
     const loadedStationIds = getUserKdsStationIds(db, userId);
     const hasStationAssignments = hasUserKdsStationAssignments(db, userId);
     if (!loadedStationIds || hasStationAssignments === null) return res.status(403).json({ error: 'User account is not active' });
-    if (hasStationAssignments && loadedStationIds.length === 0) return res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
+    if (currentUser.role === 'chef' && hasStationAssignments && loadedStationIds.length === 0) {
+      return res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
+    }
     let stationIds: string[] = loadedStationIds;
     let stationCategoryIds = getKdsStationCategoryIds(db, stationIds)!;
     if (!stationCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
@@ -61,12 +63,12 @@ router.patch('/:id/status', requireKdsEnabled, (req: Request, res: Response) => 
     const orderData = withTxn(() => {
       const liveUser = db.prepare('SELECT role, category_ids, tokens_valid_after FROM users WHERE id = ? AND is_active = 1').get(userId) as { role: string; category_ids: string | null; tokens_valid_after: string | null } | undefined;
       const token = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : '';
-      if (!liveUser || isTokenRevoked(token) || isTokenStale((req as any).user?.iat, liveUser.tokens_valid_after) || !hasRole(liveUser.role, ROLE_ACCESS.kitchen)) throw new Error('USER_FORBIDDEN');
+      if (!liveUser || isTokenRevoked(token) || isTokenStale((req as any).user?.iat, liveUser.tokens_valid_after) || !hasRole(liveUser.role, ROLE_ACCESS.orderStatus)) throw new Error('USER_FORBIDDEN');
       categoryIds = hasRole(liveUser.role, ROLE_ACCESS.ownerManager) ? [] : parseCategoryIds(liveUser.category_ids);
       const liveStationIds = getUserKdsStationIds(db, userId);
       const liveAssignments = hasUserKdsStationAssignments(db, userId);
       if (!liveStationIds || liveAssignments === null) throw new Error('USER_FORBIDDEN');
-      if (liveAssignments && liveStationIds.length === 0) throw new Error('STATION_FORBIDDEN');
+      if (liveUser.role === 'chef' && liveAssignments && liveStationIds.length === 0) throw new Error('STATION_FORBIDDEN');
       const liveStationCategoryIds = getKdsStationCategoryIds(db, liveStationIds);
       const liveStationScope = getKdsStationRoutingScope(db, liveStationIds, categoryIds);
       if (!liveStationCategoryIds || !liveStationScope) throw new Error('PERMISSIONS_UNAVAILABLE');
@@ -95,13 +97,13 @@ router.patch('/:id/status', requireKdsEnabled, (req: Request, res: Response) => 
         throw new Error('TERMINAL_KDS_ITEM');
       }
 
-      if (categoryIds.length > 0 && (!item.category_id || !categoryIds.includes(String(item.category_id)))) {
+      if (liveUser.role === 'chef' && categoryIds.length > 0 && (!item.category_id || !categoryIds.includes(String(item.category_id)))) {
         throw new Error('CATEGORY_FORBIDDEN');
       }
       const parentOrder = db.prepare('SELECT id FROM orders WHERE id = ?').get(item.order_id);
       if (!parentOrder) throw new Error('ORPHANED_ORDER_ITEM');
       let orderStationId: string | null | undefined;
-      if (stationIds.length > 0) {
+      if (liveUser.role === 'chef' && stationIds.length > 0) {
         const station = db.prepare(`
           SELECT t.kitchen_station_id
           FROM orders o LEFT JOIN tables t ON t.id = o.table_id

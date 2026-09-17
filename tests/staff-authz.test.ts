@@ -145,9 +145,20 @@ async function main() {
   assertEqual(result.body.error, 'email is required', 'blank email update returns a clear validation error');
 
   result = await request(app).post('/api/staff').set(managerAuth).send({
-    name: 'Pinned cashier', email: 'pinned-cashier@test.local', password: 'StrongPass1', role: 'cashier', pin: '1234',
+    name: 'Pinned cashier', email: 'pinned-cashier@test.local', password: 'StrongPass1', role: 'cashier', pin: '2468',
   });
-  assertEqual(result.status, 400, 'operational roles reject a non-empty PIN');
+  assertEqual(result.status, 201, 'cashier can be created with a floor PIN');
+  assertEqual(result.body.staff.has_pin, 1, 'cashier staff response exposes has_pin');
+
+  result = await request(app).post('/api/staff').set(managerAuth).send({
+    name: 'Duplicate PIN cashier', email: 'dup-pin-cashier@test.local', password: 'StrongPass1', role: 'cashier', pin: '2468',
+  });
+  assertEqual(result.status, 400, 'duplicate floor PIN is rejected');
+
+  result = await request(app).post('/api/staff').set(ownerAuth).send({
+    name: 'Pinned chef', email: 'pinned-chef@test.local', password: 'StrongPass1', role: 'chef', pin: '1357',
+  });
+  assertEqual(result.status, 400, 'chef role rejects a PIN');
 
   console.log('\n── PIN policy ─────────────────────────────────────────────────');
   for (const pin of ['abcd', '123', '1234567']) {
@@ -159,9 +170,17 @@ async function main() {
 
   result = await request(app).put('/api/staff/manager-target-145').set(ownerAuth).send({ role: 'server' });
   assertEqual(result.status, 200, 'owner can demote a manager to server');
-  assertEqual(result.body.staff.has_pin, 0, 'demoting to an operational role clears has_pin');
+  assertEqual(result.body.staff.has_pin, 1, 'demoting a manager to server keeps has_pin');
   const demoted = db.prepare('SELECT pin_hash FROM users WHERE id = ?').get('manager-target-145') as any;
-  assertEqual(demoted.pin_hash, null, 'demoting to an operational role clears pin_hash');
+  assert(!!demoted.pin_hash, 'demoting a manager to server keeps pin_hash');
+
+  result = await request(app).post('/api/staff').set(ownerAuth).send({
+    name: 'Chef-bound manager', email: 'chef-bound@test.local', password: 'StrongPass1', role: 'manager', pin: '9753',
+  });
+  assertEqual(result.status, 201, 'owner can create a manager used for chef demotion');
+  result = await request(app).put(`/api/staff/${result.body.staff.id}`).set(ownerAuth).send({ role: 'chef' });
+  assertEqual(result.status, 200, 'owner can demote a manager to chef');
+  assertEqual(result.body.staff.has_pin, 0, 'demoting to chef clears has_pin');
 
   const originalPinHash = (db.prepare('SELECT pin_hash FROM users WHERE id = ?').get('manager-145') as any).pin_hash;
   result = await request(app).put('/api/staff/manager-145').set(ownerAuth).send({ name: 'Manager PIN preserved' });
@@ -169,6 +188,11 @@ async function main() {
   assertEqual(result.body.staff.has_pin, 1, 'omitting PIN preserves has_pin');
   const preserved = db.prepare('SELECT pin_hash FROM users WHERE id = ?').get('manager-145') as any;
   assertEqual(preserved.pin_hash, originalPinHash, 'omitting PIN preserves the PIN hash');
+
+  result = await request(app).put('/api/staff/server-target-145').set(ownerAuth).send({ pin: '4321' });
+  assertEqual(result.status, 200, 'owner can set a waiter PIN without other staff fields');
+  assertEqual(result.body.staff.has_pin, 1, 'setting a waiter PIN exposes has_pin');
+  assert(!('pin_hash' in result.body.staff), 'waiter PIN update does not expose pin_hash');
 
   result = await request(app).post('/api/staff/owner-145/deactivate').set(ownerAuth);
   assertEqual(result.status, 400, 'cannot deactivate the last active owner');

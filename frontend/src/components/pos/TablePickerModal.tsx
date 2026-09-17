@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import type { Table } from '@/lib/types';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { useTranslations, type AppConfig } from 'use-intl';
+import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 
 interface Props {
   tables: Table[];
@@ -19,25 +20,34 @@ interface Props {
 type PosKey = keyof AppConfig['Messages']['pos'];
 
 const statusStyles: Record<string, { border: string; badge: string; badgeKey: PosKey | null }> = {
-  available: { border: 'border-border hover:border-brand/40', badge: '', badgeKey: null },
-  occupied: { border: 'border-orange-300 bg-orange-50', badge: 'bg-orange-500', badgeKey: 'tableOccupied' },
-  reserved: { border: 'border-yellow-300 bg-yellow-50', badge: 'bg-yellow-500', badgeKey: 'tableReserved' },
+  available: { border: 'border-green-400 bg-green-50', badge: 'bg-green-500', badgeKey: null },
+  occupied: { border: 'border-red-400 bg-red-50', badge: 'bg-red-500', badgeKey: 'tableOccupied' },
+  reserved: { border: 'border-purple-400 bg-purple-50', badge: 'bg-purple-500', badgeKey: 'tableReserved' },
   cleaning: { border: 'border-gray-300 dark:border-border bg-muted', badge: 'bg-gray-500', badgeKey: 'tableCleaning' },
   held: { border: 'border-blue-400 bg-blue-50', badge: 'bg-blue-500', badgeKey: 'tableHeld' },
+  precheck: { border: 'border-yellow-400 bg-yellow-50', badge: 'bg-yellow-500', badgeKey: 'tablePrecheck' },
 };
+
+function stayLabel(startedAt: string | null | undefined, t: (key: PosKey, values?: Record<string, number>) => string): string | null {
+  if (!startedAt) return null;
+  const mins = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 60000));
+  if (mins < 60) return t('stayMinutes', { count: mins });
+  return t('stayHours', { hours: Math.floor(mins / 60), minutes: mins % 60 });
+}
 
 export default function TablePickerModal({
   tables, selectedTableId, onSelectAvailable, onSelectOccupied, onSelectHeld, onPlaceOrder, onHoldTable, onClose,
 }: Props) {
   const heldOrders = useHeldOrdersStore();
   const t = useTranslations('pos');
+  const fmt = useFormatCurrency();
 
   const handleClick = (table: Table) => {
     if (heldOrders.hasHeldOrder(table.id)) {
       onSelectHeld(table.id);
       return;
     }
-    if (table.status === 'occupied') {
+    if (table.status === 'occupied' || table.status === 'precheck') {
       onSelectOccupied(table);
       return;
     }
@@ -60,12 +70,21 @@ export default function TablePickerModal({
           </button>
         </div>
 
+        <div className="mb-4 flex flex-wrap gap-3 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-green-500" />{t('tableLegendFree')}</span>
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-red-500" />{t('tableLegendOccupied')}</span>
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-yellow-500" />{t('tableLegendPrecheck')}</span>
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-purple-500" />{t('tableLegendReserved')}</span>
+        </div>
+
         <div className="grid grid-cols-3 gap-3">
           {tables.map((table) => {
             const isHeld = heldOrders.hasHeldOrder(table.id);
             const isSelected = selectedTableId === table.id;
             const style = statusStyles[table.status] || statusStyles.available;
             const isDisabled = table.status === 'cleaning';
+            const stay = stayLabel(table.stay_started_at, t);
+            const total = table.order_total;
 
             return (
               <button
@@ -92,10 +111,16 @@ export default function TablePickerModal({
                 )}
                 <p className="font-bold text-foreground">{table.name}</p>
                 <p className="text-xs text-muted-foreground">{t('tableSeats', { count: table.capacity })}</p>
-                {table.status === 'occupied' && (table.current_order || table.activeOrder) && (
-                  <p className="text-xs text-orange-600 font-medium mt-1">
+                {(table.status === 'occupied' || table.status === 'precheck') && (table.current_order || table.activeOrder) && (
+                  <p className="text-xs text-red-600 font-medium mt-1">
                     #{(table.current_order || table.activeOrder)?.order_number}
                   </p>
+                )}
+                {typeof total === 'number' && Number.isFinite(total) && (table.status === 'occupied' || table.status === 'precheck') && (
+                  <p className="text-xs font-semibold text-foreground mt-0.5">{fmt(total)}</p>
+                )}
+                {stay && (table.status === 'occupied' || table.status === 'precheck') && (
+                  <p className="text-[10px] text-muted-foreground mt-0.5">{stay}</p>
                 )}
               </button>
             );

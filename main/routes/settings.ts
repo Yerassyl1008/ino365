@@ -4,7 +4,7 @@ import { getDatabase, now } from '../db';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
 import { googleDrive } from '../services/google-drive';
 import { requireRole } from '../middleware/security';
-import { ROLE_ACCESS } from '../../shared/role-permissions';
+import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { requireMasterPin } from '../middleware/master-pin';
 import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
 import { sendEvent } from '../services/telemetry';
@@ -23,6 +23,7 @@ import {
   validateLanguagePolicySetting,
 } from '../lib/print-language-settings';
 import { isThemeMode } from '../title-bar-theme';
+import { ensureCatalogForBusinessType } from '../services/catalog-templates';
 
 const router = Router();
 const settingsReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
@@ -173,6 +174,7 @@ function businessShape(s: Record<string, string>) {
     business_address: s.business_address || '',
     business_phone: s.business_phone || '',
     instagram_handle: s.instagram_handle || '',
+    business_type: s.business_type === 'retail' ? 'retail' : 'restaurant',
     billing_type: s.billing_type || 'postpaid',
     tables_required: s.tables_required !== 'false',
     tax_registered: s.tax_registered === 'true' || s.tax_registered === '1',
@@ -221,7 +223,7 @@ router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
   try {
     const { business_name, timezone, currency, country, language,
       tax_registration_number, state_code, business_address, business_phone, instagram_handle,
-      billing_type, tables_required, tax_registered,
+      business_type, billing_type, tables_required, tax_registered,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
       bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,
       currency_display, number_digits, calendar } = req.body;
@@ -229,9 +231,13 @@ router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
     if (!validBusinessLocation(timezone, currency, country)) {
       return res.status(400).json({ error: 'Invalid timezone, currency, or country' });
     }
+    if (business_type !== undefined && business_type !== 'restaurant' && business_type !== 'retail') {
+      return res.status(400).json({ error: 'Invalid business type' });
+    }
 
     const db = getDatabase();
     const currentSettings = getAllSettings(db);
+    const previousBusinessType = currentSettings.business_type === 'retail' ? 'retail' : 'restaurant';
     const effectiveCountry = country || currentSettings.country || 'IN';
     const effectiveCurrency = currency || currentSettings.currency || 'INR';
 
@@ -281,6 +287,7 @@ router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
       tax_registration_number, state_code, business_address,
       business_phone: normalizedPhone !== undefined ? normalizedPhone : undefined,
       instagram_handle,
+      business_type,
       billing_type, tables_required, tax_registered,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
       bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,
@@ -290,6 +297,12 @@ router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
       // is evidence anyone chose it.
       ...countryConfirmationPatch(country, currentSettings.country, req.body.country_selected),
     });
+    if (business_type !== undefined) {
+      const nextType = business_type === 'retail' ? 'retail' : 'restaurant';
+      if (nextType !== previousBusinessType) {
+        ensureCatalogForBusinessType(db, nextType, language || currentSettings.language);
+      }
+    }
     cloudSync.refreshRegistrationProfile();
 
     res.json(businessShape(getAllSettings(db)));
@@ -445,6 +458,62 @@ router.put('/discount', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
       discount_mode: s.discount_mode || 'percentage',
       discount_requires_approval: s.discount_requires_approval === 'true' || s.discount_requires_approval === '1',
     });
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+function parseChargePercent(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(100, Math.max(0, parsed));
+}
+
+function serviceChargePayload(s: Record<string, string>) {
+  return {
+    percent: parseChargePercent(s.service_charge_percent, 0),
+    owner_percent: parseChargePercent(s.service_charge_owner_percent, 50),
+    dine_in_only: s.service_charge_dine_in_only !== 'false',
+  };
+}
+
+router.get('/service-charge', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+  try {
+    res.json(serviceChargePayload(getAllSettings(getDatabase())));
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put('/service-charge', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+  try {
+    const { percent, owner_percent, dine_in_only } = req.body || {};
+    const updates: Record<string, string> = {};
+    if (percent !== undefined) {
+      const val = Number(percent);
+      if (!Number.isFinite(val) || val < 0 || val > 100) {
+        return res.status(400).json({ error: 'percent must be a number between 0 and 100' });
+      }
+      updates.service_charge_percent = String(val);
+    }
+    if (owner_percent !== undefined) {
+      if (!hasRole((req as any).user?.role, ROLE_ACCESS.owner)) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+      const val = Number(owner_percent);
+      if (!Number.isFinite(val) || val < 0 || val > 100) {
+        return res.status(400).json({ error: 'owner_percent must be a number between 0 and 100' });
+      }
+      updates.service_charge_owner_percent = String(val);
+    }
+    if (dine_in_only !== undefined) {
+      updates.service_charge_dine_in_only = dine_in_only === false || dine_in_only === 'false' ? 'false' : 'true';
+    }
+    const db = getDatabase();
+    if (Object.keys(updates).length > 0) upsertSettings(db, updates);
+    res.json(serviceChargePayload(getAllSettings(db)));
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -952,6 +1021,30 @@ router.get('/:key', settingsReadRateLimit, requireRole(...ROLE_ACCESS.allStaff),
       }
       return res.status(404).json({ error: 'Setting not found' });
     }
+    res.json({ setting });
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Appearance is a shared-terminal preference: cashiers/servers/chefs must be
+// able to switch light/dark without a 403. Other wildcard keys stay owner/manager.
+router.put('/theme_mode', settingsWriteRateLimit, requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
+  try {
+    const { value } = req.body;
+    if (value === undefined) {
+      return res.status(400).json({ error: 'Value is required' });
+    }
+    if (!isThemeMode(value)) {
+      return res.status(400).json({ error: 'Invalid theme_mode value' });
+    }
+    const db = getDatabase();
+    db.prepare(`
+      INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run('theme_mode', value, now());
+    const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get('theme_mode');
     res.json({ setting });
   } catch (error: any) {
     console.error("[API] Internal error:", error);

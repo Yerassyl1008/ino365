@@ -16,6 +16,8 @@ interface CartState {
   onlinePlatform: string;
   externalOrderId: string;
   orderNotes: string;
+  currentGuestSeat: number;
+  currentCourse: number;
 
   addItem: (product: Product, quantity?: number, addons?: Addon[], specialInstructions?: string) => void;
   updateItemDetails: (cartItemId: string, quantity: number, addons: Addon[], specialInstructions: string) => void;
@@ -28,6 +30,8 @@ interface CartState {
   setCustomerId: (id: number | string | null) => void;
   setCustomer: (customer: Customer | null) => void;
   setGuestCount: (count: number) => void;
+  setCurrentGuestSeat: (seat: number) => void;
+  setCurrentCourse: (course: number) => void;
   setDeliveryAddress: (address: string) => void;
   setOnlinePlatform: (platform: string) => void;
   setExternalOrderId: (id: string) => void;
@@ -49,10 +53,14 @@ export const useCartStore = create<CartState>((set, get) => ({
   onlinePlatform: '',
   externalOrderId: '',
   orderNotes: '',
+  currentGuestSeat: 1,
+  currentCourse: 1,
 
   addItem: (product, quantity = 1, addons = [], specialInstructions = '') => {
     const items = get().items;
-    const itemId = generateCartItemId(product.id, addons, specialInstructions);
+    const guestSeat = get().currentGuestSeat;
+    const course = get().currentCourse;
+    const itemId = generateCartItemId(product.id, addons, specialInstructions, guestSeat, course);
     const existing = items.find((i) => i.id === itemId);
 
     if (existing) {
@@ -63,7 +71,15 @@ export const useCartStore = create<CartState>((set, get) => ({
       });
     } else {
       set({
-        items: [...items, { id: itemId, product, quantity, addons, special_instructions: specialInstructions }],
+        items: [...items, {
+          id: itemId,
+          product,
+          quantity,
+          addons,
+          special_instructions: specialInstructions,
+          guest_seat: guestSeat,
+          course,
+        }],
       });
     }
   },
@@ -73,7 +89,13 @@ export const useCartStore = create<CartState>((set, get) => ({
     const target = items.find((i) => i.id === cartItemId);
     if (!target) return;
 
-    const newId = generateCartItemId(target.product.id, addons, specialInstructions);
+    const newId = generateCartItemId(
+      target.product.id,
+      addons,
+      specialInstructions,
+      target.guest_seat || 1,
+      target.course || 1,
+    );
     if (newId === cartItemId) {
       set({
         items: items.map((i) =>
@@ -117,7 +139,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   clearCart: () => {
-    set({ items: [], tableId: null, heldOrderId: null, customerId: null, customer: null, guestCount: 1, orderType: 'dine_in', deliveryAddress: '', onlinePlatform: '', externalOrderId: '', orderNotes: '' });
+    set({ items: [], tableId: null, heldOrderId: null, customerId: null, customer: null, guestCount: 1, currentGuestSeat: 1, currentCourse: 1, orderType: 'dine_in', deliveryAddress: '', onlinePlatform: '', externalOrderId: '', orderNotes: '' });
   },
 
   loadItems: (items, tableId, customerId, guestCount, orderNotes, heldOrderId) => {
@@ -133,7 +155,12 @@ export const useCartStore = create<CartState>((set, get) => ({
   setTableId: (id) => set({ tableId: id, heldOrderId: null }),
   setCustomerId: (id) => set({ customerId: id }),
   setCustomer: (customer) => set({ customer, customerId: customer?.id ?? null }),
-  setGuestCount: (count) => set({ guestCount: count }),
+  setGuestCount: (count) => set((state) => ({
+    guestCount: count,
+    currentGuestSeat: Math.min(state.currentGuestSeat, count),
+  })),
+  setCurrentGuestSeat: (seat) => set({ currentGuestSeat: Math.max(1, seat) }),
+  setCurrentCourse: (course) => set({ currentCourse: course < 1 ? 1 : course > 5 ? 5 : course }),
   setDeliveryAddress: (address) => set({ deliveryAddress: address }),
   setOnlinePlatform: (platform) => set({ onlinePlatform: platform }),
   setExternalOrderId: (id) => set({ externalOrderId: id }),

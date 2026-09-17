@@ -87,7 +87,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
         showOpenDialog: async () => ({ canceled: false, filePaths: ['/tmp/flo-backup.db'] }),
         showMessageBox: async () => ({ response: 0 }),
       },
-      app: { getPath: () => '/tmp/flo-kds-test', getVersion: () => '3.2.0', getName: () => 'FloCafe' },
+      app: { getPath: () => '/tmp/flo-kds-test', getVersion: () => '3.2.0', getName: () => 'KorgenKassa' },
       BrowserWindow: FakeBrowserWindow,
       shell: { openExternal: () => Promise.resolve() },
     };

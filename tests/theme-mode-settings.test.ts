@@ -41,7 +41,7 @@ const mockApp = {
     if (name === 'documents') return testDir;
     return testDir;
   },
-  getName: () => 'FloCafe',
+  getName: () => 'KorgenKassa',
   getVersion: () => '0.0.0-test',
 };
 const mockBrowserWindow = class {
@@ -149,11 +149,12 @@ async function main() {
   registerIpcHandlers();
 
   // Mount a minimal Express app with the real settings router + auth-mock
-  // (owner role satisfies requireRole(...ROLE_ACCESS.ownerManager)).
+  // (owner role satisfies requireRole; cashier coverage is swapped in below).
   const app = express();
   app.use(express.json());
+  let currentRole = 'owner';
   app.use((req: any, _res: any, next: any) => {
-    req.user = { id: 1, role: 'owner', name: 'Test Owner' };
+    req.user = { id: 1, role: currentRole, name: 'Test Owner' };
     next();
   });
   app.use('/api/settings', settingsRoutes);
@@ -246,6 +247,31 @@ async function main() {
       const trustedSender = { sender: { getURL: () => 'http://localhost:3001/' } };
       const result = await handler!(trustedSender, 'theme_mode', 'DARK');
       assert.equal(result?.success, false, 'uppercase is not a valid ThemeMode');
+    }
+
+    console.log('\n7. cashier PUT /api/settings/theme_mode → HTTP 200');
+    {
+      currentRole = 'cashier';
+      const res = await httpRequest(baseUrl, '/api/settings/theme_mode', {
+        method: 'PUT',
+        body: JSON.stringify({ value: 'system' }),
+      });
+      assert.equal(res.status, 200, 'cashiers can persist appearance');
+      const db = getDatabase();
+      const row = db
+        .prepare("SELECT value FROM settings WHERE key = 'theme_mode'")
+        .get() as { value: string } | undefined;
+      assert.equal(row?.value, 'system', 'cashier write persisted');
+    }
+
+    console.log('\n8. cashier PUT /api/settings/language → HTTP 403');
+    {
+      currentRole = 'cashier';
+      const res = await httpRequest(baseUrl, '/api/settings/language', {
+        method: 'PUT',
+        body: JSON.stringify({ value: 'ru' }),
+      });
+      assert.equal(res.status, 403, 'wildcard settings stay owner/manager');
     }
 
 

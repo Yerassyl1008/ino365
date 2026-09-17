@@ -28,14 +28,19 @@ const isLinux = os.platform() === 'linux';
 // In dev: `electron .` with app.name = 'flo-desktop'
 // Packaged:
 //   - Linux: executableName "flocafe" (snap/AppImage/deb binary path)
-//   - Mac/Windows: productName "Flo Cafe"
+//   - Mac/Windows: productName "KorgenKassa"
 const FLO_PATTERNS = [
+  /(?:^|[\s\\/])KorgenKassa(?:\.exe)?(?:$|\s)/i,
+  /(?:^|[\s\\/])KorgenKassa\.app(?:[\\/]Contents[\\/]MacOS[\\/]KorgenKassa)?(?:$|\s)/i,
   /(?:^|[\s\\/])flocafe(?:\.exe)?(?:$|\s)/i,
   /(?:^|[\s\\/])Flo[\s_\-]*Cafe(?:\.exe)?(?:$|\s)/i,
   /(?:^|[\s\\/])Flo Cafe\.app(?:[\\/]Contents[\\/]MacOS[\\/]Flo Cafe)?(?:$|\s)/i,
   /(?:^|\s)com\.flo\.desktop(?:\.\S*)?(?:$|\s)/i,
   /(?:^|\s)flo[_\-]?pos(?:-service)?(?:\.exe)?(?:$|\s)/i,
   /(?:^|\s)electron(?:\s+\S+)*\s+--appName=flo[_\-]?desktop(?:$|\s)/i,
+  // `npm run dev` launches `electron .` from this repo. The command line is the
+  // local Electron binary plus `.`, with FloCafe in the path — not --appName.
+  /[\\/]FloCafe[\\/]node_modules[\\/]electron(?:[\\/]dist)?[\\/]electron(?:\.exe)?(?:$|\s)/i,
   /(?:^|\s)(?:node|nodejs)(?:\s+\S+)*[\\/]FloCafe[\\/](?:dev-server\.js|dist[\\/](?:main[\\/])?index\.js)(?:$|\s)/i,
   /(?:^|\s)(?:node|nodejs)(?:\s+\S+)*\s+dev-server\.js(?:$|\s)/i,
 ];

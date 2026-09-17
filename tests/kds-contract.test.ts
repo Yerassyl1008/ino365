@@ -159,6 +159,23 @@ async function main() {
     assertEqual(unrestrictedDisplay.status, 200, 'unrestricted station display request succeeds');
     assertEqual(unrestrictedDisplay.body.orders.some((entry: any) => entry.order_id === tablelessOrderId), true, 'unrestricted station display receives tableless orders');
 
+    const staleCompletedAt = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString().replace('T', ' ').replace(/\..*$/, '');
+    db.prepare(`INSERT INTO orders (order_number, table_id, type, status, subtotal, total, completed_at, created_at, updated_at)
+      VALUES ('KDS-STALE-PAID', 'kds-contract-table', 'dine_in', 'completed', 10, 10, ?, ?, ?)`).run(staleCompletedAt, staleCompletedAt, staleCompletedAt);
+    const stalePaidId = (db.prepare("SELECT id FROM orders WHERE order_number = 'KDS-STALE-PAID'").get() as any).id;
+    db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+      VALUES (?, 'kds-contract-product', 'Contract food', 10, 1, 10, 0, 10, 'pending', ?, ?)`).run(stalePaidId, staleCompletedAt, staleCompletedAt);
+    const staleOrders = await request(app).get('/api/kds/orders').set(authHeader);
+    assertEqual(staleOrders.body.orders.some((entry: any) => entry.id === stalePaidId), false, 'paid orders older than the KDS grace window leave the board');
+
+    db.prepare(`INSERT INTO orders (order_number, table_id, type, status, subtotal, total, completed_at, created_at, updated_at)
+      VALUES ('KDS-FRESH-PAID', 'kds-contract-table', 'dine_in', 'completed', 10, 10, ?, ?, ?)`).run(now(), now(), now());
+    const freshPaidId = (db.prepare("SELECT id FROM orders WHERE order_number = 'KDS-FRESH-PAID'").get() as any).id;
+    db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+      VALUES (?, 'kds-contract-product', 'Contract food', 10, 1, 10, 0, 10, 'pending', ?, ?)`).run(freshPaidId, now(), now());
+    const freshOrders = await request(app).get('/api/kds/orders').set(authHeader);
+    assertEqual(freshOrders.body.orders.some((entry: any) => entry.id === freshPaidId), true, 'just-paid orders stay on KDS until kitchen serves them');
+
     const pairingCreate = await request(app).post('/api/kds/pairing').set(authHeader).send({ station_id: 'kds-contract-station' });
     assertEqual(pairingCreate.status, 201, 'pairing token creation succeeds');
     const storedPairing = db.prepare('SELECT id FROM kds_pairing_tokens WHERE token = ?').get(pairingCreate.body.pairingToken.token) as { id: string };

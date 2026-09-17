@@ -70,9 +70,11 @@ function printPoweredByFooter(enc: ReceiptPrinterEncoder): void {
     .align('center')
     .size('small')
     .text(RECEIPT_BRANDING_NAME)
-    .newline()
-    .text(RECEIPT_BRANDING_URL)
-    .newline()
+    .newline();
+  if (RECEIPT_BRANDING_URL) {
+    enc.text(RECEIPT_BRANDING_URL).newline();
+  }
+  enc
     .size('normal')
     .align('left');
 }

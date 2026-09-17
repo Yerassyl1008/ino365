@@ -31,13 +31,14 @@ import { WhatsAppEnableCard } from '@/components/settings/WhatsAppEnableCard';
 import { TaxConfigurationPanel } from '@/components/settings/TaxConfigurationPanel';
 import { PaymentMethodsSettings } from '@/components/settings/PaymentMethodsSettings';
 import { LocalePreferencesPanel } from '@/components/settings/LocalePreferencesPanel';
+import { ServerAppWaiterAccess } from '@/components/settings/ServerAppWaiterAccess';
 import { TimeZoneSelect } from '@/components/TimeZoneSelect';
 import type { HealthCheckReport } from '@/types/electron';
 import { useLocale, useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useUpdateStatus } from '@/hooks/useUpdateStatus';
-import { TENANT_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
+import { TENANT_STATUS_LABEL_KEYS, BUSINESS_TYPE_LABEL_KEYS } from '@/lib/i18n-enums';
 import { isTemplateCardSelected, type BillTemplateSelectionSource } from '@/lib/bill-template-picker';
 import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
 
@@ -273,6 +274,7 @@ export default function SettingsPage() {
   // Synced at the dashboard layout level now (issue #534).
   const t = useTranslations('settings');
   const tCommon = useTranslations('common');
+  const tBusinessType = useTranslations('businessType');
   const locale = useLocale();
   const sortedCountries = sortCountriesByLocalizedName(COUNTRIES, locale);
   const tRestore = useTranslations('restore');
@@ -282,6 +284,7 @@ export default function SettingsPage() {
   const { formatDate, formatTime, formatDateTime } = useFormatDate();
   const isAdmin = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
   const isOwner = hasRole(currentTenant?.role, ROLE_ACCESS.owner);
+  const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const canViewTaxConfiguration = isAdmin;
   const { confirm, ConfirmDialog } = useConfirm();
 
@@ -305,6 +308,15 @@ export default function SettingsPage() {
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   const [savedDiscountRequiresApproval, setSavedDiscountRequiresApproval] = useState(false);
   const [savingDiscount, setSavingDiscount] = useState(false);
+
+  const normalizeServicePercent = (value: unknown) => Math.min(100, Math.max(0, Number(value) || 0));
+  const [serviceChargePercent, setServiceChargePercent] = useState(0);
+  const [savedServiceChargePercent, setSavedServiceChargePercent] = useState(0);
+  const [serviceChargeOwnerPercent, setServiceChargeOwnerPercent] = useState(50);
+  const [savedServiceChargeOwnerPercent, setSavedServiceChargeOwnerPercent] = useState(50);
+  const [serviceChargeDineInOnly, setServiceChargeDineInOnly] = useState(true);
+  const [savedServiceChargeDineInOnly, setSavedServiceChargeDineInOnly] = useState(true);
+  const [savingServiceCharge, setSavingServiceCharge] = useState(false);
 
   // Table info dialog
   const [tableInfoOpen, setTableInfoOpen] = useState(false);
@@ -424,8 +436,13 @@ export default function SettingsPage() {
   useEffect(() => {
     // This is navigation state arriving from Next.js, not an async data effect.
     // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!isRestaurant && (requestedTab === 'kds' || requestedTab === 'server-app')) {
+      setActiveTab('store');
+      router.replace('/settings');
+      return;
+    }
     setActiveTab(requestedTab);
-  }, [requestedTab]);
+  }, [requestedTab, isRestaurant, router]);
 
   const handleSettingsTabChange = (value: string) => {
     setActiveTab(value);
@@ -816,7 +833,7 @@ export default function SettingsPage() {
     qr_data_url: string | null;
     ips_data?: { ip: string; url: string; qr_data: string | null }[];
   } | null>(null);
-  const [serverAppInfoLoading, setServerAppInfoLoading] = useState(false);
+  const [serverAppInfoLoading, setServerAppInfoLoading] = useState(true);
 
   const fetchServerAppInfo = () => {
     setServerAppInfoLoading(true);
@@ -1337,6 +1354,7 @@ export default function SettingsPage() {
   // Store / business fields — local form state (saved only on explicit Save)
   type BusinessForm = {
     businessName: string; countryCode: string; timezone: string; currency: string;
+    businessType: 'restaurant' | 'retail';
     billingType: 'postpaid' | 'prepaid';
     tablesRequired: boolean;
     taxRegistered: boolean;
@@ -1346,7 +1364,7 @@ export default function SettingsPage() {
     calendar: CalendarMode;
   };
   const [savedBusiness, setSavedBusiness] = useState<BusinessForm>({
-    businessName: '', countryCode: '', timezone: '', currency: '', billingType: 'postpaid',
+    businessName: '', countryCode: '', timezone: '', currency: '', businessType: 'restaurant', billingType: 'postpaid',
     tablesRequired: true,
     taxRegistered: false,
     taxRegistrationNumber: '', businessAddress: '', businessPhone: '', instagramHandle: '',
@@ -1521,11 +1539,12 @@ export default function SettingsPage() {
 
   const resetBusiness = async () => {
     try {
-      const [businessRes, loyaltyRes, discountRes, orderNumberingRes] = await Promise.all([
+      const [businessRes, loyaltyRes, discountRes, orderNumberingRes, serviceChargeRes] = await Promise.all([
         api.get('/settings/business'),
         api.get('/settings/loyalty'),
         api.get('/settings/discount'),
         api.get('/settings/order-numbering'),
+        api.get('/settings/service-charge'),
       ]);
 
       const d = businessRes.data;
@@ -1534,6 +1553,7 @@ export default function SettingsPage() {
         countryCode: d.country || '',
         timezone: d.timezone || '',
         currency: d.currency || '',
+        businessType: d.business_type === 'retail' ? 'retail' : 'restaurant',
         billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
         tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
         taxRegistered: d.tax_registered === 'true' || d.tax_registered === true || d.tax_registered === 1,
@@ -1587,6 +1607,20 @@ export default function SettingsPage() {
       }
       if (discountRes.data.discount_mode) { setDiscountMode(discountRes.data.discount_mode); setSavedDiscountMode(discountRes.data.discount_mode); }
       if (discountRes.data.discount_requires_approval !== undefined) { setDiscountRequiresApproval(!!discountRes.data.discount_requires_approval); setSavedDiscountRequiresApproval(!!discountRes.data.discount_requires_approval); }
+      if (serviceChargeRes.data.percent !== undefined) {
+        const value = normalizeServicePercent(serviceChargeRes.data.percent);
+        setServiceChargePercent(value);
+        setSavedServiceChargePercent(value);
+      }
+      if (serviceChargeRes.data.owner_percent !== undefined) {
+        const value = normalizeServicePercent(serviceChargeRes.data.owner_percent);
+        setServiceChargeOwnerPercent(value);
+        setSavedServiceChargeOwnerPercent(value);
+      }
+      if (serviceChargeRes.data.dine_in_only !== undefined) {
+        setServiceChargeDineInOnly(!!serviceChargeRes.data.dine_in_only);
+        setSavedServiceChargeDineInOnly(!!serviceChargeRes.data.dine_in_only);
+      }
 
       const loadedOrderNumbering: OrderNumberForm = {
         prefix: orderNumberingRes.data.order_number_prefix ?? 'ORD',
@@ -1653,6 +1687,10 @@ export default function SettingsPage() {
       .then((res) => setKdsInfo(res.data))
       .catch(() => toast.error(t('kdsInfoFetchFailed')))
       .finally(() => setKdsInfoLoading(false));
+    api.get('/server-app-info')
+      .then((res) => setServerAppInfo(res.data))
+      .catch(() => toast.error(t('serverAppInfoFetchFailed')))
+      .finally(() => setServerAppInfoLoading(false));
     fetchStations();
     fetchStationCategories();
     fetchStationStaff();
@@ -1681,6 +1719,23 @@ export default function SettingsPage() {
       }
       if (res.data.discount_mode) { setDiscountMode(res.data.discount_mode); setSavedDiscountMode(res.data.discount_mode); }
       if (res.data.discount_requires_approval !== undefined) { setDiscountRequiresApproval(!!res.data.discount_requires_approval); setSavedDiscountRequiresApproval(!!res.data.discount_requires_approval); }
+    }).catch(() => {});
+
+    api.get('/settings/service-charge').then((res) => {
+      if (res.data.percent !== undefined) {
+        const value = normalizeServicePercent(res.data.percent);
+        setServiceChargePercent(value);
+        setSavedServiceChargePercent(value);
+      }
+      if (res.data.owner_percent !== undefined) {
+        const value = normalizeServicePercent(res.data.owner_percent);
+        setServiceChargeOwnerPercent(value);
+        setSavedServiceChargeOwnerPercent(value);
+      }
+      if (res.data.dine_in_only !== undefined) {
+        setServiceChargeDineInOnly(!!res.data.dine_in_only);
+        setSavedServiceChargeDineInOnly(!!res.data.dine_in_only);
+      }
     }).catch(() => {});
 
     api.get('/settings/telemetry_enabled').then((res) => {
@@ -1882,6 +1937,7 @@ export default function SettingsPage() {
         countryCode: d.country || '',
         timezone: d.timezone || '',
         currency: d.currency || '',
+        businessType: d.business_type === 'retail' ? 'retail' : 'restaurant',
         billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
         tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
         taxRegistered: d.tax_registered === 'true' || d.tax_registered === true || d.tax_registered === 1,
@@ -2196,6 +2252,27 @@ export default function SettingsPage() {
     }
   };
 
+  const saveServiceCharge = async (silent = false) => {
+    setSavingServiceCharge(true);
+    try {
+      const payload: { percent: number; dine_in_only: boolean; owner_percent?: number } = {
+        percent: normalizeServicePercent(serviceChargePercent),
+        dine_in_only: serviceChargeDineInOnly,
+      };
+      if (isOwner) payload.owner_percent = normalizeServicePercent(serviceChargeOwnerPercent);
+      await api.put('/settings/service-charge', payload);
+      setSavedServiceChargePercent(normalizeServicePercent(serviceChargePercent));
+      setSavedServiceChargeDineInOnly(serviceChargeDineInOnly);
+      if (isOwner) setSavedServiceChargeOwnerPercent(normalizeServicePercent(serviceChargeOwnerPercent));
+      if (!silent) toast.success(t('serviceChargeSaved'));
+    } catch (err) {
+      if (!silent) toast.error(t('saveFailed'));
+      throw err;
+    } finally {
+      setSavingServiceCharge(false);
+    }
+  };
+
   const saveBusinessInfo = async (silent = false) => {
     const norm = normalizeOptionalPhone(form.businessPhone, form.countryCode || 'IN');
     if (!norm.valid) {
@@ -2211,6 +2288,7 @@ export default function SettingsPage() {
         timezone: form.timezone,
         currency: form.currency,
         country: form.countryCode,
+        business_type: form.businessType,
         billing_type: form.billingType,
         tables_required: form.tablesRequired,
         tax_registered: form.taxRegistered,
@@ -2263,7 +2341,15 @@ export default function SettingsPage() {
       posSettings.setBillPhone(normalizedBusinessPhone);
       posSettings.setBillingType(form.billingType);
       posSettings.setTablesRequired(form.tablesRequired);
-      updateCurrentTenant({ currency: form.currency, timezone: form.timezone, country: form.countryCode, currency_display: form.currencyDisplay, number_digits: form.numberDigits, calendar: form.calendar });
+      updateCurrentTenant({
+        currency: form.currency,
+        timezone: form.timezone,
+        country: form.countryCode,
+        business_type: form.businessType,
+        currency_display: form.currencyDisplay,
+        number_digits: form.numberDigits,
+        calendar: form.calendar,
+      });
       if (!silent) toast.success(t('storeSaved'));
     } catch (err: unknown) {
       const responseData = (err as { response?: { data?: unknown } }).response?.data;
@@ -2328,7 +2414,7 @@ export default function SettingsPage() {
 
   const saveAllSettings = async () => {
     try {
-      await Promise.all([saveBusinessInfo(true), saveLoyalty(true), saveDiscount(true), saveCloud(true), saveOrderNumbering(true)]);
+      await Promise.all([saveBusinessInfo(true), saveLoyalty(true), saveDiscount(true), saveServiceCharge(true), saveCloud(true), saveOrderNumbering(true)]);
       await savePrinting(true);
       await saveBillTemplate(true);
       toast.success(t('allSaved'));
@@ -2378,6 +2464,9 @@ export default function SettingsPage() {
     discountMaxAmount !== savedDiscountMaxAmount ||
     discountMode !== savedDiscountMode ||
     discountRequiresApproval !== savedDiscountRequiresApproval ||
+    serviceChargePercent !== savedServiceChargePercent ||
+    serviceChargeOwnerPercent !== savedServiceChargeOwnerPercent ||
+    serviceChargeDineInOnly !== savedServiceChargeDineInOnly ||
     JSON.stringify(cloudSettings) !== JSON.stringify(savedCloudSettings);
 
   useEffect(() => {
@@ -2421,6 +2510,15 @@ export default function SettingsPage() {
 
            <nav className="flex md:flex-col gap-0.5 overflow-x-auto md:flex-1 md:min-h-0 md:overflow-x-hidden md:overflow-y-auto md:overscroll-contain border-b md:border-b-0 md:border-e border-border pb-2 md:pb-0 md:pe-2">
 
+            {isRestaurant && (
+              <>
+                <div className="hidden md:block px-3 pt-3 pb-2 mb-1 border-b border-border">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupWaiterApp')}</p>
+                </div>
+                <SettingsNavItem label={t('tablesideOrdering')} value="server-app" active={activeTab} onClick={handleSettingsTabChange} />
+              </>
+            )}
+
             {/* General group */}
             <div className="hidden md:block px-3 pt-3 pb-2 mt-2 mb-1 border-b border-border">
               <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupGeneral')}</p>
@@ -2440,8 +2538,9 @@ export default function SettingsPage() {
               <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupOperations')}</p>
             </div>
             <SettingsNavItem label={t('posWorkflow')} value="pos" active={activeTab} onClick={handleSettingsTabChange} />
-            <SettingsNavItem label={t('tabKds')} value="kds" active={activeTab} onClick={handleSettingsTabChange} />
-            <SettingsNavItem label={t('tablesideOrdering')} value="server-app" active={activeTab} onClick={handleSettingsTabChange} />
+            {isRestaurant && (
+              <SettingsNavItem label={t('tabKds')} value="kds" active={activeTab} onClick={handleSettingsTabChange} />
+            )}
             {/* WhatsApp opt-in lives under Operations because the receive-bill
                 workflow is what the cashier touches every time a customer pays. */}
             <SettingsNavItem label={t('tabWhatsapp')} value="whatsapp" active={activeTab} onClick={handleSettingsTabChange} />
@@ -2498,6 +2597,22 @@ export default function SettingsPage() {
                   ) : (
                     <p className="font-medium text-foreground">{form.businessName || currentTenant?.business_name}</p>
                   )}
+                </div>
+                <div>
+                  <label className="block text-sm text-muted-foreground mb-1">{t('businessMode')}</label>
+                  {isAdmin ? (
+                    <select
+                      value={form.businessType}
+                      onChange={(e) => setForm((p) => ({ ...p, businessType: e.target.value === 'retail' ? 'retail' : 'restaurant' }))}
+                      className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
+                    >
+                      <option value="restaurant">{tBusinessType(BUSINESS_TYPE_LABEL_KEYS.restaurant)}</option>
+                      <option value="retail">{tBusinessType(BUSINESS_TYPE_LABEL_KEYS.retail)}</option>
+                    </select>
+                  ) : (
+                    <p className="font-medium text-foreground">{tBusinessType(BUSINESS_TYPE_LABEL_KEYS[form.businessType])}</p>
+                  )}
+                  <p className="mt-1 text-xs text-muted-foreground">{t('businessModeHint')}</p>
                 </div>
                 {/* Country, Timezone, Currency in single line with individual headings */}
                 <div className="md:col-span-2 space-y-2">
@@ -2596,6 +2711,7 @@ export default function SettingsPage() {
                     ...(patch.calendar !== undefined ? { calendar: patch.calendar } : {}),
                   }))}
                 />
+                {isRestaurant && (
                 <div>
                   <label className="block text-sm text-muted-foreground mb-1">{t('billingType')}</label>
                   {isAdmin ? (
@@ -2609,6 +2725,8 @@ export default function SettingsPage() {
                     <p className="font-medium text-foreground capitalize">{form.billingType}</p>
                   )}
                 </div>
+                )}
+                {isRestaurant && (
                 <div>
                   <label className="block text-sm text-muted-foreground mb-1">{t('tablesRequired')}</label>
                   {isAdmin ? (
@@ -2624,6 +2742,7 @@ export default function SettingsPage() {
                     <p className="font-medium text-foreground">{form.tablesRequired ? t('yes') : t('no')}</p>
                   )}
                 </div>
+                )}
                 <div>
                   <label className="block text-sm text-muted-foreground mb-1">{t('taxRegistered')}</label>
                   {isAdmin ? (
@@ -3399,6 +3518,8 @@ export default function SettingsPage() {
               </div>
             </div>
 
+            <ServerAppWaiterAccess />
+
             {!serverAppEnabledSetting && (
               <p className="text-sm text-gray-400 italic">
                 {t('serverAppPairingHiddenHint')}
@@ -3645,6 +3766,54 @@ export default function SettingsPage() {
                   </button>
                 </div>
 
+              </div>
+            </div>
+
+            <div className="bg-card rounded-xl border border-border p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Percent size={20} className="text-muted-foreground" />
+                <h2 className="font-semibold text-foreground">{t('serviceChargeTitle')}</h2>
+              </div>
+              <div className="space-y-5">
+                <p className="text-sm text-muted-foreground">{t('serviceChargeHint')}</p>
+                <div>
+                  <p className="font-medium text-foreground">{t('serviceChargePercent')}</p>
+                  <p className="text-sm text-muted-foreground mb-2">{t('serviceChargePercentHint')}</p>
+                  <div className="flex items-center gap-3">
+                    <input type="number" min={0} max={100} step={0.5} value={serviceChargePercent}
+                      onChange={(e) => setServiceChargePercent(normalizeServicePercent(e.target.value))}
+                      className="w-24 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand" />
+                    <span className="text-sm text-muted-foreground">%</span>
+                  </div>
+                </div>
+                {isOwner && (
+                  <div>
+                    <p className="font-medium text-foreground">{t('serviceChargeOwnerShare')}</p>
+                    <p className="text-sm text-muted-foreground mb-2">{t('serviceChargeOwnerShareHint')}</p>
+                    <div className="flex items-center gap-3">
+                      <input type="number" min={0} max={100} step={1} value={serviceChargeOwnerPercent}
+                        onChange={(e) => setServiceChargeOwnerPercent(normalizeServicePercent(e.target.value))}
+                        className="w-24 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand" />
+                      <span className="text-sm text-muted-foreground">%</span>
+                    </div>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-foreground">{t('serviceChargeDineInOnly')}</p>
+                    <p className="text-sm text-muted-foreground">{t('serviceChargeDineInOnlyHint')}</p>
+                  </div>
+                  <button
+                    onClick={() => setServiceChargeDineInOnly(!serviceChargeDineInOnly)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      serviceChargeDineInOnly ? 'bg-brand' : 'bg-gray-200'
+                    }`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-card transition-transform ${
+                      serviceChargeDineInOnly ? 'translate-x-6 rtl:-translate-x-6' : 'translate-x-1 rtl:-translate-x-1'
+                    }`} />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -4088,6 +4257,7 @@ export default function SettingsPage() {
                       : t('printMethodBrowserHint')}
                   </p>
                 </div>
+                {isRestaurant && (
                 <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-foreground">{t('kotPrintingEnabledToggle')}</p>
@@ -4095,6 +4265,8 @@ export default function SettingsPage() {
                   </div>
                   <Toggle value={kotPrintingEnabledSetting} onChange={(v) => { if (!savingKotPrintingEnabled) saveKotPrintingEnabled(v); }} />
                 </div>
+                )}
+                {isRestaurant && (
                 <div className={`flex items-center justify-between gap-4 ${!kotPrintingEnabledSetting ? 'opacity-50' : ''}`}>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-foreground">{t('autoPrintKot')}</p>
@@ -4109,7 +4281,8 @@ export default function SettingsPage() {
                     onChange={(v) => { if (kotPrintingEnabledSetting) setPrintingForm((p) => ({ ...p, autoPrintKot: v })); }}
                   />
                 </div>
-                {!kdsEnabledSetting && !kotPrintingEnabledSetting && (
+                )}
+                {isRestaurant && !kdsEnabledSetting && !kotPrintingEnabledSetting && (
                   <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                     <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
                     <p className="text-xs text-amber-800">
@@ -4994,16 +5167,6 @@ export default function SettingsPage() {
               <p className="text-sm text-muted-foreground mb-6">
                 {t('aboutDescription')}
               </p>
-              <div className="space-y-3">
-                <a href="https://github.com/FreeOpenSourcePOS/FloCafe" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-brand hover:underline">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
-                  {t('aboutGithub')}
-                </a>
-                <a href="https://flopos.com/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-brand hover:underline">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
-                  {t('aboutWebsite')}
-                </a>
-              </div>
             </div>
 
             {/* More Apps — moved here from the old Integrations tab */}
@@ -5274,8 +5437,8 @@ export default function SettingsPage() {
           <div className={`bg-gray-900 text-white px-6 py-4 rounded-full shadow-2xl flex items-center gap-6 pointer-events-auto ${shakeSaveBar ? 'animate-shake' : ''}`}>
             <span className="text-sm font-medium">{t('unsavedChanges')}</span>
             <div className="flex items-center gap-2">
-              <button onClick={resetAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering} className="px-4 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-full transition-colors disabled:opacity-50 text-white">{t('discard')}</button>
-              <button onClick={saveAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering} className="px-4 py-1.5 text-sm bg-brand hover:opacity-90 rounded-full font-medium transition-colors disabled:opacity-50 text-white">{(savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering) ? t('saving') : t('saveChanges')}</button>
+              <button onClick={resetAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingServiceCharge || savingCloud || savingOrderNumbering} className="px-4 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-full transition-colors disabled:opacity-50 text-white">{t('discard')}</button>
+              <button onClick={saveAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingServiceCharge || savingCloud || savingOrderNumbering} className="px-4 py-1.5 text-sm bg-brand hover:opacity-90 rounded-full font-medium transition-colors disabled:opacity-50 text-white">{(savingBusiness || savingLoyalty || savingDiscount || savingServiceCharge || savingCloud || savingOrderNumbering) ? t('saving') : t('saveChanges')}</button>
             </div>
           </div>
         </div>

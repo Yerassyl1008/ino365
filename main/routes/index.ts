@@ -10,6 +10,7 @@ import { orderItemRoutes } from './order-items';
 import { billRoutes, syncUnpaidBillsForOrder } from './bills';
 import { refundRoutes } from './refunds';
 import { tableRoutes } from './tables';
+import { shiftRoutes } from './shifts';
 import { kitchenStationRoutes } from './kitchen-stations';
 import { kitchenRoutes } from './kitchen';
 import { customerRoutes, parseCustomer, getWalletBalance } from './customers';
@@ -32,8 +33,11 @@ import { heldOrderRoutes } from './held-orders';
 import { printTemplateRoutes } from './print-templates';
 import { whatsappRoutes } from './whatsapp';
 import { supportTicketRoutes } from './support-ticket';
+import { warehouseRoutes } from './warehouse';
 import { getDatabase, now, parseItemJson, attachEffectiveAddons, withTxn, getSettingValue, getCachedPairingCode, setCachedPairingCode, verifyPin } from '../db';
 import { checkPinRateLimit } from './orders';
+import { redeductOrderItemIngredients, restoreOrderItemIngredients } from '../services/kitchen-inventory';
+import { computeServiceChargeFields } from '../services/service-charge';
 
 const OWNER_MANAGER_ROLE_PLACEHOLDERS = ROLE_ACCESS.ownerManager.map(() => '?').join(', ');
 import {
@@ -87,6 +91,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/bills', billRoutes);
   app.use('/api/refunds', refundRoutes);
   app.use('/api/tables', tableRoutes);
+  app.use('/api/shifts', shiftRoutes);
   app.use('/api/kitchen-stations', kitchenStationRoutes);
   app.use('/api/customers', customerRoutes);
   app.use('/api/staff', staffRoutes);   // users with POS roles
@@ -108,6 +113,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/print-templates', printTemplateRoutes);
   app.use('/api/whatsapp', whatsappRoutes);
   app.use('/api/support-ticket', supportTicketRoutes);
+  app.use('/api/warehouse', warehouseRoutes);
 
   // Tax preview
   app.post('/api/tax/preview', asyncHandler(async (req, res) => {
@@ -434,6 +440,12 @@ export function registerRoutes(app: Express): void {
             db.prepare('UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ?')
               .run(currentItem.inventory_deducted_quantity, now(), product.id);
           }
+          restoreOrderItemIngredients(db, {
+            orderId,
+            orderItemId: itemId,
+            userId: actorId,
+            reason: 'cancel',
+          });
         }
 
         // Recalculate order totals excluding cancelled, voided, and void_adjustment items
@@ -487,9 +499,10 @@ export function registerRoutes(app: Express): void {
         const customer = currentOrder.customer_id
           ? db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any
           : null;
+        const service = computeServiceChargeFields(currentOrder.type, subtotal, newDiscountAmount);
         const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, {
           ...currentOrder,
-          service_charge: 0,
+          service_charge: service.amount,
         }, customer);
         const taxRollup = combineItemAndChargeTaxes({
           itemTaxAmount: newTaxAmount,
@@ -502,7 +515,7 @@ export function registerRoutes(app: Express): void {
 
         // BUG #5 FIX: Correct round-off formula; BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)
         const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
-          + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0);
+          + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0) + service.amount;
         const roundOff = 0;
         const total = Number(preRoundTotal.toFixed(2));
 
@@ -515,16 +528,18 @@ export function registerRoutes(app: Express): void {
         if (orderCancelled) {
           db.prepare(`
             UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?,
+              service_charge = ?, service_charge_owner_amount = ?,
               status = 'cancelled', cancelled_at = ?, cancellation_reason = ?, updated_at = ? WHERE id = ?
-          `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total, roundOff, now(), 'All items cancelled', now(), orderId);
+          `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total, roundOff, service.amount, service.ownerAmount, now(), 'All items cancelled', now(), orderId);
           if (currentOrder.table_id) {
             db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
               .run(now(), currentOrder.table_id);
           }
         } else {
           db.prepare(`
-            UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
-          `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total, roundOff, now(), orderId);
+            UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?,
+              service_charge = ?, service_charge_owner_amount = ?, updated_at = ? WHERE id = ?
+          `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total, roundOff, service.amount, service.ownerAmount, now(), orderId);
         }
 
         syncUnpaidBillsForOrder(db, orderId, {
@@ -535,6 +550,7 @@ export function registerRoutes(app: Express): void {
           discountAmount: newDiscountAmount,
           deliveryCharge: order.delivery_charge || 0,
           packagingCharge: order.packaging_charge || 0,
+          serviceCharge: service.amount,
           total,
         }, tenantInfo.country);
 
@@ -617,6 +633,11 @@ export function registerRoutes(app: Express): void {
           db.prepare('UPDATE products SET stock_quantity = stock_quantity - ?, updated_at = ? WHERE id = ?')
             .run(currentItem.inventory_deducted_quantity, now(), product.id);
         }
+        redeductOrderItemIngredients(db, {
+          orderId,
+          orderItemId: itemId,
+          userId: actorId,
+        });
 
         // Restore - mark as pending
         db.prepare("UPDATE order_items SET status = 'pending', updated_at = ? WHERE id = ?")
@@ -673,9 +694,10 @@ export function registerRoutes(app: Express): void {
         const customer = currentOrder.customer_id
           ? db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any
           : null;
+        const service = computeServiceChargeFields(currentOrder.type, subtotal, newDiscountAmount);
         const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, {
           ...currentOrder,
-          service_charge: 0,
+          service_charge: service.amount,
         }, customer);
         const taxRollup = combineItemAndChargeTaxes({
           itemTaxAmount: newTaxAmount,
@@ -688,13 +710,14 @@ export function registerRoutes(app: Express): void {
 
         // BUG #5 FIX: Correct round-off formula; BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)
         const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
-          + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0);
+          + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0) + service.amount;
         const roundOff = 0;
         const total = Number(preRoundTotal.toFixed(2));
 
         db.prepare(`
-          UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
-        `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total, roundOff, now(), orderId);
+          UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?,
+            service_charge = ?, service_charge_owner_amount = ?, updated_at = ? WHERE id = ?
+        `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total, roundOff, service.amount, service.ownerAmount, now(), orderId);
 
         syncUnpaidBillsForOrder(db, orderId, {
           subtotal,
@@ -704,6 +727,7 @@ export function registerRoutes(app: Express): void {
           discountAmount: newDiscountAmount,
           deliveryCharge: order.delivery_charge || 0,
           packagingCharge: order.packaging_charge || 0,
+          serviceCharge: service.amount,
           total,
         }, tenantInfo.country);
 

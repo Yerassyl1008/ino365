@@ -2,8 +2,8 @@
 
 import axios, { AxiosInstance } from 'axios';
 import toast from 'react-hot-toast';
-import { Bell, CheckCircle2, ChefHat, Circle, Flame, LogOut, Minus, Plus, RefreshCw, Search, Send, Smartphone, UserRound } from 'lucide-react';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, Bell, CheckCircle2, ChefHat, Circle, Flame, LogOut, Minus, Plus, RefreshCw, Search, Send, Smartphone, UserRound } from 'lucide-react';
+import { FormEvent, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { parsePhone } from '@/lib/phone';
 import { useSyncServerLanguage } from '@/lib/i18n';
 import { useTranslations, type AppConfig } from 'use-intl';
@@ -17,6 +17,7 @@ type Table = { id: string; name?: string; number?: string; status?: string; acti
 type OrderItem = { id: number; product_name: string; quantity: number; status: string; special_instructions?: string | null };
 type Order = { id: number; order_number: string; table_id?: string | null; status: string; items?: OrderItem[]; customer?: { id: string; name: string; phone?: string } | null };
 type DraftLine = { product: Product; quantity: number; note: string };
+type MobileView = 'tables' | 'menu';
 
 type ServerAppKey = keyof AppConfig['Messages']['serverApp'];
 
@@ -50,6 +51,157 @@ function money(value: number | string) {
   return Number(value || 0).toFixed(2);
 }
 
+function nextKitchenItemStatus(status: string): 'preparing' | 'ready' | 'served' | null {
+  if (status === 'pending') return 'preparing';
+  if (status === 'preparing') return 'ready';
+  if (status === 'ready') return 'served';
+  return null;
+}
+
+function kitchenAdvanceLabelKey(next: 'preparing' | 'ready' | 'served'): 'markPreparing' | 'markReady' | 'markServed' {
+  if (next === 'preparing') return 'markPreparing';
+  if (next === 'ready') return 'markReady';
+  return 'markServed';
+}
+
+function TicketPanel({
+  t,
+  customerName,
+  customerPhone,
+  setCustomerName,
+  setCustomerPhone,
+  currentOrder,
+  draft,
+  changeQty,
+  setDraft,
+  draftTotal,
+  sendDraft,
+  selectedTableId,
+  sending,
+  advancingItemId,
+  onAdvanceItem,
+}: {
+  t: (key: ServerAppKey) => string;
+  customerName: string;
+  customerPhone: string;
+  setCustomerName: (value: string) => void;
+  setCustomerPhone: (value: string) => void;
+  currentOrder: Order | null;
+  draft: DraftLine[];
+  changeQty: (productId: string, delta: number) => void;
+  setDraft: Dispatch<SetStateAction<DraftLine[]>>;
+  draftTotal: number;
+  sendDraft: () => void;
+  selectedTableId: string;
+  sending: boolean;
+  advancingItemId: number | null;
+  onAdvanceItem: (item: OrderItem) => void;
+}) {
+  return (
+    <>
+      <h2 className="text-lg font-semibold">{t('currentTicket')}</h2>
+      <div className="mt-3 grid grid-cols-1 gap-3">
+        <input
+          value={customerName}
+          onChange={(event) => setCustomerName(event.target.value)}
+          placeholder={t('customerNamePlaceholder')}
+          className="h-14 w-full min-w-0 rounded-xl border border-gray-200 bg-white px-4 text-lg text-gray-900 caret-gray-900 focus:border-brand focus:outline-none"
+        />
+        <input
+          value={customerPhone}
+          onChange={(event) => setCustomerPhone(event.target.value)}
+          dir="ltr"
+          placeholder={t('phonePlaceholder')}
+          className="h-14 w-full min-w-0 rounded-xl border border-gray-200 bg-white px-4 text-lg text-gray-900 caret-gray-900 focus:border-brand focus:outline-none"
+        />
+      </div>
+
+      {currentOrder?.items && currentOrder.items.length > 0 && (
+        <div className="mt-4 border-t border-gray-100 pt-3">
+          <p className="mb-2 text-sm font-semibold uppercase text-gray-500">{t('kitchen')}</p>
+          <div className="space-y-3">
+            {currentOrder.items.map((item) => {
+              const next = nextKitchenItemStatus(item.status);
+              return (
+                <div key={item.id} className="flex min-h-14 items-center gap-3 text-base">
+                  {itemStatusIcon(item.status, t)}
+                  <span className="min-w-0 flex-1">
+                    <span className="block leading-snug"><Ltr>{item.quantity}</Ltr> x {item.product_name}</span>
+                  </span>
+                  {next ? (
+                    <button
+                      type="button"
+                      disabled={advancingItemId === item.id}
+                      onClick={() => onAdvanceItem(item)}
+                      className="h-12 shrink-0 rounded-xl bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50"
+                    >
+                      {t(kitchenAdvanceLabelKey(next))}
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 border-t border-gray-100 pt-3">
+        <p className="mb-2 text-sm font-semibold uppercase text-gray-500">{t('newItems')}</p>
+        {draft.length === 0 ? (
+          <p className="py-8 text-center text-base text-gray-400">{t('emptyDraft')}</p>
+        ) : (
+          <div className="space-y-3">
+            {draft.map((line) => (
+              <div key={line.product.id} className="rounded-xl border border-gray-100 p-4">
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 text-base font-semibold">{line.product.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => changeQty(line.product.id, -1)}
+                    className="flex h-12 w-12 items-center justify-center rounded-xl border border-gray-200"
+                    aria-label="-"
+                  >
+                    <Minus size={18} />
+                  </button>
+                  <span className="w-8 text-center text-lg font-semibold"><Ltr>{line.quantity}</Ltr></span>
+                  <button
+                    type="button"
+                    onClick={() => changeQty(line.product.id, 1)}
+                    className="flex h-12 w-12 items-center justify-center rounded-xl border border-gray-200"
+                    aria-label="+"
+                  >
+                    <Plus size={18} />
+                  </button>
+                </div>
+                <input
+                  value={line.note}
+                  onChange={(event) => setDraft((lines) => lines.map((draftLine) => draftLine.product.id === line.product.id ? { ...draftLine, note: event.target.value } : draftLine))}
+                  placeholder={t('itemNotePlaceholder')}
+                  className="mt-3 h-12 w-full rounded-xl border border-gray-200 bg-white px-3 text-base text-gray-900 caret-gray-900 focus:border-brand focus:outline-none"
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-4">
+        <span className="text-base text-gray-500">{t('draftTotal')}</span>
+        <span className="text-2xl font-bold"><Ltr>{money(draftTotal)}</Ltr></span>
+      </div>
+      <button
+        type="button"
+        onClick={sendDraft}
+        disabled={!selectedTableId || draft.length === 0 || sending}
+        className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-brand text-lg font-semibold text-white disabled:opacity-50"
+      >
+        <Send size={17} />
+        {sending ? t('sending') : currentOrder ? t('addToOrder') : t('sendToKitchen')}
+      </button>
+    </>
+  );
+}
+
 export default function ServerStandalonePage() {
   // The Server App inherits the tenant language from `/api/server-app/info`,
   // the same way the standalone KDS inherits it from `/api/kds/info` — no
@@ -67,8 +219,10 @@ export default function ServerStandalonePage() {
   const api = useMemo(() => (typeof window !== 'undefined' ? createApi() : null), []);
   const [loading, setLoading] = useState(true);
   const [loginLoading, setLoginLoading] = useState(false);
+  const [loginMode, setLoginMode] = useState<'pin' | 'email'>('pin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [pin, setPin] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [disabled, setDisabled] = useState(false);
@@ -84,6 +238,9 @@ export default function ServerStandalonePage() {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [sending, setSending] = useState(false);
+  const [advancingItemId, setAdvancingItemId] = useState<number | null>(null);
+  const [mobileView, setMobileView] = useState<MobileView>('tables');
+  const [ticketOpen, setTicketOpen] = useState(false);
 
   async function loadAll() {
     if (!api) return;
@@ -102,7 +259,7 @@ export default function ServerStandalonePage() {
   async function loadOrder(tableId: string) {
     if (!api || !tableId) return;
     const res = await api.get('/api/orders', {
-      params: { table_id: tableId, type: 'dine_in', status: 'pending,preparing,ready', per_page: 1 },
+      params: { table_id: tableId, type: 'dine_in', status: 'pending,preparing,ready,served', per_page: 1 },
     });
     const order = res.data.orders?.[0] || null;
     setCurrentOrder(order);
@@ -154,7 +311,7 @@ export default function ServerStandalonePage() {
     if (!selectedTableId || !user || !api) return;
     let cancelled = false;
     api.get('/api/orders', {
-      params: { table_id: selectedTableId, type: 'dine_in', status: 'pending,preparing,ready', per_page: 1 },
+      params: { table_id: selectedTableId, type: 'dine_in', status: 'pending,preparing,ready,served', per_page: 1 },
     }).then((res) => {
       if (cancelled) return;
       const order = res.data.orders?.[0] || null;
@@ -187,10 +344,29 @@ export default function ServerStandalonePage() {
     }
   }
 
+  async function handlePinLogin(event: FormEvent) {
+    event.preventDefault();
+    if (!api || pin.length < 4) return;
+    setLoginLoading(true);
+    try {
+      const res = await api.post('/api/auth/pin-login', { pin, remember_me: rememberMe });
+      localStorage.setItem(TOKEN_KEY, res.data.access_token);
+      setUser(res.data.user);
+      setPin('');
+    } catch (error: unknown) {
+      setPin('');
+      toastApiError(error, t('signInFailed'), apiErrorT);
+    } finally {
+      setLoginLoading(false);
+    }
+  }
+
   async function logout() {
     try { await api?.post('/api/auth/logout'); } catch {}
     localStorage.removeItem(TOKEN_KEY);
     setUser(null);
+    setMobileView('tables');
+    setTicketOpen(false);
   }
 
   function addProduct(product: Product) {
@@ -249,12 +425,27 @@ export default function ServerStandalonePage() {
         }, { headers: { 'Idempotency-Key': `server-app-${Date.now()}-${selectedTableId}` } });
       }
       setDraft([]);
+      setTicketOpen(false);
       await Promise.all([loadAll(), loadOrder(selectedTableId)]);
       toast.success(t('orderSent'));
     } catch (error: unknown) {
       toastApiError(error, t('couldNotSendOrder'), apiErrorT);
     } finally {
       setSending(false);
+    }
+  }
+
+  async function advanceItem(item: OrderItem) {
+    const next = nextKitchenItemStatus(item.status);
+    if (!api || !next) return;
+    setAdvancingItemId(item.id);
+    try {
+      await api.patch(`/api/order-items/${item.id}/status`, { status: next, expected_status: item.status });
+      await loadOrder(selectedTableId);
+    } catch {
+      toast.error(t('statusUpdateFailed'));
+    } finally {
+      setAdvancingItemId(null);
     }
   }
 
@@ -265,14 +456,32 @@ export default function ServerStandalonePage() {
     return matchesCategory && matchesQuery;
   });
   const draftTotal = draft.reduce((sum, line) => sum + Number(line.product.price || 0) * line.quantity, 0);
+  const draftCount = draft.reduce((sum, line) => sum + line.quantity, 0);
+  const ticketProps = {
+    t,
+    customerName,
+    customerPhone,
+    setCustomerName,
+    setCustomerPhone,
+    currentOrder,
+    draft,
+    changeQty,
+    setDraft,
+    draftTotal,
+    sendDraft,
+    selectedTableId,
+    sending,
+    advancingItemId,
+    onAdvanceItem: advanceItem,
+  };
 
   if (loading) {
-    return <div className="flex h-screen items-center justify-center"><div className="h-10 w-10 rounded-full border-4 border-brand border-t-transparent animate-spin" /></div>;
+    return <div className="flex h-dvh items-center justify-center"><div className="h-10 w-10 rounded-full border-4 border-brand border-t-transparent animate-spin" /></div>;
   }
 
   if (disabled) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-6 text-center">
+      <div className="flex min-h-dvh flex-col items-center justify-center gap-3 px-6 text-center">
         <Smartphone size={44} className="text-gray-400" />
         <h1 className="text-lg font-semibold text-gray-900">{t('disabledTitle')}</h1>
         <p className="max-w-sm text-sm text-gray-500">{t('disabledHint')}</p>
@@ -282,143 +491,200 @@ export default function ServerStandalonePage() {
 
   if (!user) {
     return (
-      <div className="flex min-h-screen items-center justify-center p-4">
-        <form onSubmit={handleLogin} className="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+      <div className="flex min-h-dvh items-center justify-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
           <div className="mb-6 text-center">
             <UserRound size={42} className="mx-auto mb-3 text-brand" />
             <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
             <p className="mt-1 text-sm text-gray-500">{t('loginSubtitle')}</p>
+            <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{t('notAdminHint')}</p>
           </div>
-          <div className="space-y-3">
-            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" dir="ltr" placeholder={t('emailPlaceholder')} required className="h-11 w-full rounded-lg border border-gray-300 px-3 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
-            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder={tAuth('password')} required className="h-11 w-full rounded-lg border border-gray-300 px-3 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
-            <label className="flex items-center gap-2 text-sm text-gray-600">
-              <input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className="rounded border-gray-300 text-brand focus:ring-brand" />
-              {tAuth('rememberMe')}
-            </label>
-            <button disabled={loginLoading} className="h-11 w-full rounded-lg bg-brand font-semibold text-white disabled:opacity-60">
-              {loginLoading ? tAuth('signingIn') : tAuth('signIn')}
+          <div className="mb-4 grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1">
+            <button
+              type="button"
+              onClick={() => setLoginMode('pin')}
+              className={`min-h-11 rounded-md text-sm font-medium ${loginMode === 'pin' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}
+            >
+              {tAuth('pinTab')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setLoginMode('email')}
+              className={`min-h-11 rounded-md text-sm font-medium ${loginMode === 'email' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}
+            >
+              {tAuth('emailTab')}
             </button>
           </div>
+          {loginMode === 'pin' ? (
+            <form onSubmit={handlePinLogin} className="space-y-3">
+              <p className="text-center text-sm text-gray-500">{t('pinLoginHint')}</p>
+              <div className="rounded-xl border border-gray-300 px-4 py-3 text-center font-mono text-2xl tracking-[0.4em] text-gray-900" dir="ltr">
+                {pin ? '•'.repeat(pin.length) : '••••'}
+              </div>
+              <div className="grid grid-cols-3 gap-2" dir="ltr">
+                {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'].map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    disabled={loginLoading}
+                    onClick={() => {
+                      if (key === 'C') setPin('');
+                      else if (key === '⌫') setPin((current) => current.slice(0, -1));
+                      else setPin((current) => (current + key).slice(0, 6));
+                    }}
+                    className="min-h-12 rounded-xl border border-gray-200 bg-white text-lg font-semibold text-gray-900 disabled:opacity-50"
+                  >
+                    {key === 'C' ? tAuth('pinClear') : key}
+                  </button>
+                ))}
+              </div>
+              <label className="flex min-h-12 items-center gap-3 text-base text-gray-600">
+                <input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className="size-6 rounded border-gray-300 text-brand focus:ring-brand" />
+                {tAuth('rememberMe')}
+              </label>
+              <button disabled={loginLoading || pin.length < 4} className="h-14 w-full rounded-xl bg-brand text-lg font-semibold text-white disabled:opacity-60">
+                {loginLoading ? tAuth('signingIn') : tAuth('pinLogin')}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleLogin} className="space-y-3">
+              <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" dir="ltr" placeholder={t('emailPlaceholder')} required className="h-14 w-full rounded-xl border border-gray-300 bg-white px-4 text-lg text-gray-900 caret-gray-900 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
+              <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder={tAuth('password')} required className="h-14 w-full rounded-xl border border-gray-300 bg-white px-4 text-lg text-gray-900 caret-gray-900 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
+              <label className="flex min-h-12 items-center gap-3 text-base text-gray-600">
+                <input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className="size-6 rounded border-gray-300 text-brand focus:ring-brand" />
+                {tAuth('rememberMe')}
+              </label>
+              <button disabled={loginLoading} className="h-14 w-full rounded-xl bg-brand text-lg font-semibold text-white disabled:opacity-60">
+                {loginLoading ? tAuth('signingIn') : tAuth('signIn')}
+              </button>
+            </form>
+          )}
           <p className="mt-4 text-center text-xs text-gray-500">{t('loginHint')}</p>
-        </form>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-gray-900">
-      <header className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 px-3 py-2 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand text-white"><ChefHat size={18} /></div>
+    <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-slate-50 text-gray-900">
+      <header className="relative z-20 shrink-0 border-b border-gray-200 bg-white/95 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
+        <div className="flex w-full min-w-0 items-center gap-3">
+          {mobileView === 'menu' && (
+            <button
+              type="button"
+              onClick={() => { setMobileView('tables'); setTicketOpen(false); }}
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-gray-200 text-gray-600 md:hidden"
+              aria-label={t('backToTables')}
+            >
+              <ArrowLeft size={22} className="rtl-flip" />
+            </button>
+          )}
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-brand text-white"><ChefHat size={22} /></div>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-base font-semibold">{t('title')}</h1>
-            <p className="truncate text-xs text-gray-500">{activeTable ? t('tableLabel', { name: activeTable.name ?? String(activeTable.number) }) : t('selectTable')}</p>
+            <h1 className="truncate text-xl font-semibold">{t('title')}</h1>
+            <p className="truncate text-sm text-gray-500">{activeTable ? t('tableLabel', { name: activeTable.name ?? String(activeTable.number) }) : t('selectTable')}</p>
           </div>
-          <button onClick={() => loadAll().catch(() => toast.error(t('refreshFailed')))} className="rounded-lg border border-gray-200 p-2 text-gray-600"><RefreshCw size={17} /></button>
-          <button onClick={logout} className="rounded-lg border border-gray-200 p-2 text-gray-600"><LogOut size={17} /></button>
+          <button type="button" onClick={() => loadAll().catch(() => toast.error(t('refreshFailed')))} className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-gray-200 text-gray-600"><RefreshCw size={20} /></button>
+          <button type="button" onClick={logout} className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-gray-200 text-gray-600"><LogOut size={20} /></button>
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-6xl gap-3 p-3 lg:grid-cols-[220px_1fr_340px]">
-        <section className="rounded-lg border border-gray-200 bg-white p-3">
-          <h2 className="mb-2 text-xs font-semibold uppercase text-gray-500">{t('tables')}</h2>
-          <div className="grid grid-cols-3 gap-2 lg:grid-cols-1">
+      <main className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <section className={`${mobileView === 'tables' ? 'flex' : 'hidden'} min-h-0 w-full shrink-0 flex-col overflow-y-auto border-gray-200 bg-white p-4 md:flex md:w-56 md:border-e`}>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">{t('tables')}</h2>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-1">
             {tables.map((table) => {
               const selected = table.id === selectedTableId;
               const order = table.activeOrder || table.current_order;
               return (
-                <button key={table.id} onClick={() => setSelectedTableId(table.id)}
-                  className={`min-h-14 rounded-lg border px-2 py-2 text-start ${selected ? 'border-brand bg-brand/5' : 'border-gray-200 bg-white'}`}>
-                  <span className="block truncate text-sm font-semibold">{table.name || table.number}</span>
-                  <span className="text-xs text-gray-500">{order ? t('openOrder') : tTables('statusAvailable')}</span>
+                <button
+                  key={table.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedTableId(table.id);
+                    setMobileView('menu');
+                    setTicketOpen(false);
+                  }}
+                  className={`min-h-20 rounded-xl border px-4 py-4 text-start ${selected ? 'border-brand bg-brand/5' : 'border-gray-200 bg-white'}`}
+                >
+                  <span className="block truncate text-lg font-semibold">{table.name || table.number}</span>
+                  <span className="text-sm text-gray-500">{order ? t('openOrder') : tTables('statusAvailable')}</span>
                 </button>
               );
             })}
           </div>
         </section>
 
-        <section className="rounded-lg border border-gray-200 bg-white p-3">
-          <div className="mb-3 flex gap-2">
-            <div className="relative flex-1">
-              <Search size={16} className="absolute start-3 top-3 text-gray-400" />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchMenu')} className="h-10 w-full rounded-lg border border-gray-200 ps-9 pe-3 text-sm focus:border-brand focus:outline-none" />
+        <section className={`${mobileView === 'menu' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-white p-4 pb-32 md:flex md:pb-4`}>
+          <div className="mb-4 flex gap-2">
+            <div className="relative min-w-0 flex-1">
+              <Search size={20} className="pointer-events-none absolute start-4 top-4 text-gray-400" />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchMenu')} className="h-14 w-full rounded-xl border border-gray-200 bg-white ps-12 pe-4 text-lg text-gray-900 caret-gray-900 focus:border-brand focus:outline-none" />
             </div>
           </div>
-          <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
-            <button onClick={() => setSelectedCategoryId('all')} className={`h-9 shrink-0 rounded-lg px-3 text-sm ${selectedCategoryId === 'all' ? 'bg-brand text-white' : 'bg-gray-100 text-gray-700'}`}>{tOrders('all')}</button>
+          <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
+            <button type="button" onClick={() => setSelectedCategoryId('all')} className={`h-12 shrink-0 rounded-full px-5 text-base font-medium ${selectedCategoryId === 'all' ? 'bg-brand text-white' : 'bg-gray-100 text-gray-700'}`}>{tOrders('all')}</button>
             {categories.map((category) => (
-              <button key={category.id} onClick={() => setSelectedCategoryId(category.id)}
-                className={`h-9 shrink-0 rounded-lg px-3 text-sm ${selectedCategoryId === category.id ? 'bg-brand text-white' : 'bg-gray-100 text-gray-700'}`}>
+              <button
+                key={category.id}
+                type="button"
+                onClick={() => setSelectedCategoryId(category.id)}
+                className={`h-12 shrink-0 rounded-full px-5 text-base font-medium ${selectedCategoryId === category.id ? 'bg-brand text-white' : 'bg-gray-100 text-gray-700'}`}
+              >
                 {category.name}
               </button>
             ))}
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
             {filteredProducts.map((product) => (
-              <button key={product.id} onClick={() => addProduct(product)}
-                className="min-h-24 rounded-lg border border-gray-200 bg-white p-3 text-start hover:border-brand">
-                <span className="line-clamp-2 text-sm font-semibold">{product.name}</span>
-                <span className="mt-2 block text-sm text-gray-500"><Ltr>{money(product.price)}</Ltr></span>
+              <button
+                key={product.id}
+                type="button"
+                onClick={() => addProduct(product)}
+                className="flex min-h-16 min-w-0 items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-4 text-start active:bg-brand/5 md:min-h-28 md:flex-col md:items-start"
+              >
+                <span className="text-lg font-semibold leading-snug">{product.name}</span>
+                <span className="shrink-0 text-lg font-medium text-gray-600"><Ltr>{money(product.price)}</Ltr></span>
               </button>
             ))}
           </div>
         </section>
 
-        <section className="rounded-lg border border-gray-200 bg-white p-3 lg:sticky lg:top-16 lg:self-start">
-          <h2 className="text-sm font-semibold">{t('currentTicket')}</h2>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <input value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder={t('customerNamePlaceholder')} className="h-10 rounded-lg border border-gray-200 px-3 text-sm focus:border-brand focus:outline-none" />
-            <input value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} dir="ltr" placeholder={t('phonePlaceholder')} className="h-10 rounded-lg border border-gray-200 px-3 text-sm focus:border-brand focus:outline-none" />
-          </div>
-
-          {currentOrder?.items && currentOrder.items.length > 0 && (
-            <div className="mt-4 border-t border-gray-100 pt-3">
-              <p className="mb-2 text-xs font-semibold uppercase text-gray-500">{t('kitchen')}</p>
-              <div className="space-y-2">
-                {currentOrder.items.map((item) => (
-                  <div key={item.id} className="flex items-center gap-2 text-sm">
-                    {itemStatusIcon(item.status, t)}
-                    <span className="min-w-0 flex-1 truncate"><Ltr>{item.quantity}</Ltr> x {item.product_name}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="mt-4 border-t border-gray-100 pt-3">
-            <p className="mb-2 text-xs font-semibold uppercase text-gray-500">{t('newItems')}</p>
-            {draft.length === 0 ? (
-              <p className="py-6 text-center text-sm text-gray-400">{t('emptyDraft')}</p>
-            ) : (
-              <div className="space-y-3">
-                {draft.map((line) => (
-                  <div key={line.product.id} className="rounded-lg border border-gray-100 p-2">
-                    <div className="flex items-center gap-2">
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">{line.product.name}</span>
-                      <button onClick={() => changeQty(line.product.id, -1)} className="rounded-md border border-gray-200 p-1"><Minus size={14} /></button>
-                      <span className="w-6 text-center text-sm font-semibold"><Ltr>{line.quantity}</Ltr></span>
-                      <button onClick={() => changeQty(line.product.id, 1)} className="rounded-md border border-gray-200 p-1"><Plus size={14} /></button>
-                    </div>
-                    <input value={line.note} onChange={(event) => setDraft((lines) => lines.map((draftLine) => draftLine.product.id === line.product.id ? { ...draftLine, note: event.target.value } : draftLine))}
-                      placeholder={t('itemNotePlaceholder')} className="mt-2 h-9 w-full rounded-md border border-gray-200 px-2 text-sm focus:border-brand focus:outline-none" />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3">
-            <span className="text-sm text-gray-500">{t('draftTotal')}</span>
-            <span className="text-lg font-bold"><Ltr>{money(draftTotal)}</Ltr></span>
-          </div>
-          <button onClick={sendDraft} disabled={!selectedTableId || draft.length === 0 || sending}
-            className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand font-semibold text-white disabled:opacity-50">
-            <Send size={17} />
-            {sending ? t('sending') : currentOrder ? t('addToOrder') : t('sendToKitchen')}
-          </button>
+        <section className="hidden min-h-0 w-80 shrink-0 overflow-y-auto border-s border-gray-200 bg-white p-4 xl:block">
+          <TicketPanel {...ticketProps} />
         </section>
       </main>
+
+      <div className={`${mobileView === 'menu' ? 'block' : 'hidden'} shrink-0 border-t border-gray-200 bg-white px-4 pt-3 md:block xl:hidden pb-[max(1rem,env(safe-area-inset-bottom))]`}>
+          <button
+            type="button"
+            onClick={() => setTicketOpen(true)}
+            className="flex h-16 w-full items-center justify-between rounded-xl bg-brand px-5 text-lg font-semibold text-white"
+          >
+            <span>{t('viewTicket', { count: draftCount })}</span>
+            <span><Ltr>{money(draftTotal)}</Ltr></span>
+          </button>
+        </div>
+
+      {ticketOpen && (
+        <div className="fixed inset-0 z-40 xl:hidden">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label={t('hideTicket')}
+            onClick={() => setTicketOpen(false)}
+          />
+          <div className="absolute inset-x-0 bottom-0 max-h-[85dvh] overflow-auto rounded-t-2xl bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+            <div className="mb-4 flex items-center justify-between">
+              <span className="text-lg font-semibold">{t('currentTicket')}</span>
+              <button type="button" onClick={() => setTicketOpen(false)} className="h-12 rounded-xl px-4 text-base text-gray-600">
+                {t('hideTicket')}
+              </button>
+            </div>
+            <TicketPanel {...ticketProps} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

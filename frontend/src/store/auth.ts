@@ -23,6 +23,7 @@ interface AuthState {
   loading: boolean;
 
   login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
+  pinLogin: (pin: string, rememberMe?: boolean) => Promise<void>;
   selectTenant: (tenantId: number) => Promise<void>;
   logout: () => void;
   loadFromStorage: () => void;
@@ -73,6 +74,20 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   login: async (email: string, password: string, rememberMe = false) => {
     const { data } = await api.post('/auth/login', { email, password, rememberMe });
+    const tenants: Tenant[] = data.tenants;
+    const currentTenant = tenants.length === 1 ? tenants[0] : null;
+    persistSession(data.access_token, currentTenant);
+    set({
+      user: data.user,
+      token: data.access_token,
+      tenants,
+      currentTenant,
+    });
+    syncTenantLanguage(currentTenant);
+  },
+
+  pinLogin: async (pin: string, rememberMe = false) => {
+    const { data } = await api.post('/auth/pin-login', { pin, rememberMe });
     const tenants: Tenant[] = data.tenants;
     const currentTenant = tenants.length === 1 ? tenants[0] : null;
     persistSession(data.access_token, currentTenant);

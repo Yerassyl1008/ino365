@@ -4,6 +4,7 @@ import { requireRole, isBlockedSsrfTarget } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getHttpRequestSignal } from '../shutdown';
 import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
+import { JOINED_CATEGORY_SCOPE_SQL, categoryVisibleForBusiness, normalizeCatalogBusinessType } from '../../shared/catalog-scope';
 import * as crypto from 'crypto';
 import * as dns from 'dns';
 import * as https from 'https';
@@ -418,8 +419,12 @@ function normalizeRequiredName(raw: unknown): string | null {
 function validateCategoryId(db: any, categoryId: unknown): string | null {
   if (categoryId === null || categoryId === undefined || categoryId === '') return null;
   if (typeof categoryId !== 'string') return 'category_id must be a string or null';
-  const category = db.prepare('SELECT id FROM categories WHERE id = ? AND deleted_at IS NULL AND is_active = 1').get(categoryId);
+  const category = db.prepare('SELECT id, business_scope FROM categories WHERE id = ? AND deleted_at IS NULL AND is_active = 1').get(categoryId) as { id: string; business_scope?: string } | undefined;
   if (!category) return 'Category not found or inactive';
+  const mode = normalizeCatalogBusinessType(getSettingValue('business_type'));
+  if (!categoryVisibleForBusiness(category.business_scope, mode)) {
+    return 'Category is not available in this business mode';
+  }
   return null;
 }
 
@@ -495,6 +500,9 @@ router.get('/', (req: Request, res: Response) => {
     if (req.query.low_stock === 'true') {
       query += ' AND p.track_inventory = 1 AND p.stock_quantity <= p.low_stock_threshold';
     }
+
+    query += ` AND ${JOINED_CATEGORY_SCOPE_SQL}`;
+    params.push(normalizeCatalogBusinessType(getSettingValue('business_type')));
 
     query += ' ORDER BY p.sort_order, p.name';
 

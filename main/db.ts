@@ -11,6 +11,7 @@ import { SHUTDOWN_TIMEOUT_MS } from './shutdown';
 import { resolveContainedPath } from './lib/path-containment';
 import { serializeMerchantTemplatePayload, validateMerchantTemplateText } from '../shared/print';
 import { ROLE_KEYS } from '../shared/role-permissions';
+import { RESTAURANT_TEMPLATE_CATEGORY_IDS, RETAIL_TEMPLATE_CATEGORY_IDS } from '../shared/catalog-scope';
 
 const USER_ROLE_SQL_CHECK = `CHECK (role IN (${ROLE_KEYS.map((role) => `'${role}'`).join(', ')}))`;
 
@@ -2256,6 +2257,62 @@ export function buildIdealSchemaDb(): Database.Database {
   return idealDb;
 }
 
+// Kitchen warehouse: ingredients, tech cards, and a movement journal.
+// Shared by createSchema() (fresh installs) and migration v79 (upgrades).
+const KITCHEN_WAREHOUSE_DDL = `
+    CREATE TABLE IF NOT EXISTS ingredients (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      unit TEXT NOT NULL CHECK (unit IN ('g', 'kg', 'ml', 'l', 'pcs')),
+      stock_quantity REAL NOT NULL DEFAULT 0,
+      low_stock_threshold REAL NOT NULL DEFAULT 0,
+      cost_per_unit REAL NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS product_recipes (
+      id TEXT PRIMARY KEY,
+      product_id TEXT NOT NULL,
+      ingredient_id TEXT NOT NULL,
+      quantity REAL NOT NULL CHECK (quantity > 0),
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(product_id, ingredient_id),
+      FOREIGN KEY (product_id) REFERENCES products(id),
+      FOREIGN KEY (ingredient_id) REFERENCES ingredients(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS order_item_ingredient_deductions (
+      order_item_id INTEGER NOT NULL,
+      ingredient_id TEXT NOT NULL,
+      quantity REAL NOT NULL,
+      PRIMARY KEY (order_item_id, ingredient_id),
+      FOREIGN KEY (order_item_id) REFERENCES order_items(id),
+      FOREIGN KEY (ingredient_id) REFERENCES ingredients(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS stock_movements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ingredient_id TEXT NOT NULL,
+      quantity REAL NOT NULL,
+      reason TEXT NOT NULL CHECK (reason IN ('sale', 'cancel', 'restore', 'receive', 'waste', 'count', 'adjustment')),
+      order_id INTEGER,
+      order_item_id INTEGER,
+      note TEXT,
+      user_id TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (ingredient_id) REFERENCES ingredients(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ingredients_active ON ingredients(is_active, name);
+    CREATE INDEX IF NOT EXISTS idx_product_recipes_product ON product_recipes(product_id);
+    CREATE INDEX IF NOT EXISTS idx_product_recipes_ingredient ON product_recipes(ingredient_id);
+    CREATE INDEX IF NOT EXISTS idx_stock_movements_ingredient ON stock_movements(ingredient_id, id);
+    CREATE INDEX IF NOT EXISTS idx_order_item_ingredient_deductions_item ON order_item_ingredient_deductions(order_item_id);
+`;
+
 // ─── Migration registry ───────────────────────────────────────────────────────
 // Each entry runs exactly once, in order, wrapped in a transaction.
 // To add a schema change: append a new entry. Never edit existing entries.
@@ -4163,6 +4220,79 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 79,
+    name: 'add_kitchen_warehouse',
+    up: () => {
+      db.exec(KITCHEN_WAREHOUSE_DDL);
+    },
+  },
+  {
+    version: 80,
+    name: 'add_category_business_scope',
+    up: () => {
+      const columns = getColumns(db, 'categories');
+      if (!columns.includes('business_scope')) {
+        db.exec(`ALTER TABLE categories ADD COLUMN business_scope TEXT NOT NULL DEFAULT 'both'`);
+      }
+      db.prepare(`
+        UPDATE categories SET business_scope = 'restaurant'
+        WHERE id IN (${RESTAURANT_TEMPLATE_CATEGORY_IDS.map(() => '?').join(',')})
+      `).run(...RESTAURANT_TEMPLATE_CATEGORY_IDS);
+      db.prepare(`
+        UPDATE categories SET business_scope = 'retail'
+        WHERE id IN (${RETAIL_TEMPLATE_CATEGORY_IDS.map(() => '?').join(',')})
+      `).run(...RETAIL_TEMPLATE_CATEGORY_IDS);
+    },
+  },
+  {
+    version: 81,
+    name: 'add_waiter_floor_shifts_precheck_courses',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS shifts (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          opened_at TEXT NOT NULL,
+          closed_at TEXT,
+          FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_shifts_user_open ON shifts(user_id, closed_at);
+      `);
+      const itemColumns = getColumns(db, 'order_items');
+      if (!itemColumns.includes('course')) {
+        db.exec(`ALTER TABLE order_items ADD COLUMN course INTEGER NOT NULL DEFAULT 1`);
+      }
+      if (!itemColumns.includes('guest_seat')) {
+        db.exec(`ALTER TABLE order_items ADD COLUMN guest_seat INTEGER NOT NULL DEFAULT 1`);
+      }
+      const billColumns = getColumns(db, 'bills');
+      if (!billColumns.includes('precheck_printed_at')) {
+        db.exec(`ALTER TABLE bills ADD COLUMN precheck_printed_at TEXT`);
+      }
+    },
+  },
+  {
+    version: 82,
+    name: 'add_service_charge_percent',
+    up: () => {
+      const orderColumns = getColumns(db, 'orders');
+      if (!orderColumns.includes('service_charge')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN service_charge REAL NOT NULL DEFAULT 0`);
+      }
+      if (!orderColumns.includes('service_charge_owner_amount')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN service_charge_owner_amount REAL NOT NULL DEFAULT 0`);
+      }
+      const billColumns = getColumns(db, 'bills');
+      if (!billColumns.includes('service_charge')) {
+        db.exec(`ALTER TABLE bills ADD COLUMN service_charge REAL NOT NULL DEFAULT 0`);
+      }
+      const stamp = now();
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('service_charge_percent', '0', ?)`).run(stamp);
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('service_charge_owner_percent', '50', ?)`).run(stamp);
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('service_charge_dine_in_only', 'true', ?)`).run(stamp);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4231,7 +4361,7 @@ export class SchemaVersionMismatchError extends Error {
     super(
       `Database schema (v${dbVersion}) is newer than this app version supports (v${appVersion}). ` +
       `This usually means another device or a previous update already upgraded this database. ` +
-      `Please update Flo Cafe to the latest version before continuing.`
+      `Please update KorgenKassa to the latest version before continuing.`
     );
     this.name = 'SchemaVersionMismatchError';
   }
@@ -4305,6 +4435,7 @@ function createSchema(): void {
       slug TEXT,
       color TEXT,
       icon TEXT,
+      business_scope TEXT NOT NULL DEFAULT 'both' CHECK (business_scope IN ('restaurant', 'retail', 'both')),
       deleted_at TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -4455,6 +4586,15 @@ function createSchema(): void {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS shifts (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      opened_at TEXT NOT NULL,
+      closed_at TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_shifts_user_open ON shifts(user_id, closed_at);
+
     -- ── Transactional tables ─────────────────────────────────────────────
 
     CREATE TABLE IF NOT EXISTS orders (
@@ -4468,6 +4608,8 @@ function createSchema(): void {
       special_instructions TEXT,
       packaging_charge REAL DEFAULT 0,
       delivery_charge REAL DEFAULT 0,
+      service_charge REAL DEFAULT 0,
+      service_charge_owner_amount REAL DEFAULT 0,
       status TEXT DEFAULT 'pending',
       subtotal REAL DEFAULT 0,
       tax_amount REAL DEFAULT 0,
@@ -4513,6 +4655,8 @@ function createSchema(): void {
       modifier_selection TEXT,
       addons TEXT,
       special_instructions TEXT,
+      course INTEGER NOT NULL DEFAULT 1,
+      guest_seat INTEGER NOT NULL DEFAULT 1,
       status TEXT DEFAULT 'pending',
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -4534,6 +4678,7 @@ function createSchema(): void {
       discount_reason TEXT,
       delivery_charge REAL DEFAULT 0,
       packaging_charge REAL DEFAULT 0,
+      service_charge REAL DEFAULT 0,
       round_off REAL DEFAULT 0,
       total REAL DEFAULT 0,
       paid_amount REAL DEFAULT 0,
@@ -4542,6 +4687,7 @@ function createSchema(): void {
       payment_details TEXT,
       paid_at TEXT,
       printed_at TEXT,
+      precheck_printed_at TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (order_id) REFERENCES orders(id)
@@ -4697,6 +4843,7 @@ function createSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_tax_overrides_pack_version ON tax_overrides(pack_version_id);
     CREATE INDEX IF NOT EXISTS idx_installed_print_templates_pack_version ON installed_print_templates(pack_version_id);
   `);
+  db.exec(KITCHEN_WAREHOUSE_DDL);
 }
 
 function createTaxPackSchema(): void {
@@ -4925,6 +5072,9 @@ function seedInstallDefaults(): void {
   insert('state_code', '');
   insert('tax_scheme', 'regular');
   insert('taxes_enabled', 'false');
+  insert('service_charge_percent', '0');
+  insert('service_charge_owner_percent', '50');
+  insert('service_charge_dine_in_only', 'true');
   insert('billing_type', 'postpaid');
   insert('tables_required', 'true');
   insert('service_model', 'finedine');
@@ -5170,6 +5320,27 @@ export function verifyPin(storedHash: string | null | undefined, inputPin: strin
 // through, for this long after voiding — long enough for kitchen staff to
 // notice it's been pulled — then drops off like a served item would.
 export const KDS_VOIDED_ITEM_VISIBILITY_MS = 15 * 60 * 1000;
+/** Paid/completed orders stay on KDS until kitchen serves them (prepaid).
+ *  After this window they drop off so admin-closed tickets do not sit for days. */
+export const KDS_COMPLETED_STALE_MS = 4 * 60 * 60 * 1000;
+
+export function kdsStaleCompletedCutoff(): string {
+  return new Date(Date.now() - KDS_COMPLETED_STALE_MS).toISOString().replace('T', ' ').replace(/\..*$/, '');
+}
+
+/** Orders the kitchen still needs: live statuses, plus recently paid tickets
+ *  whose items have not been served yet. Older completed orders are excluded. */
+export function activeKitchenOrderIdsSql(): string {
+  const cutoff = kdsStaleCompletedCutoff();
+  return `
+    SELECT id FROM orders WHERE status IN ('pending','preparing','ready','served')
+    UNION
+    SELECT o.id FROM orders o
+    JOIN order_items oi ON oi.order_id = o.id AND oi.status NOT IN ('served','cancelled')
+    WHERE o.status NOT IN ('pending','preparing','ready','served','cancelled')
+      AND (o.status != 'completed' OR o.completed_at IS NULL OR o.completed_at > '${cutoff}')
+  `;
+}
 
 /**
  * Whether a voided order item should still appear on a KDS surface. Only

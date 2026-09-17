@@ -8,11 +8,20 @@ import api from '@/lib/api';
 
 const CYCLE: readonly ThemeMode[] = ['light', 'dark', 'system'];
 
+function responseStatus(err: unknown): number | undefined {
+  if (!err || typeof err !== 'object' || !('response' in err)) return undefined;
+  const status = (err as { response?: { status?: number } }).response?.status;
+  return typeof status === 'number' ? status : undefined;
+}
+
 /**
  * Quick theme-mode control for chrome (e.g. the sidebar): optimistically
  * flips the shared store and persists it, rolling back on a failed save.
  * Settings > Appearance owns its own hydration/race handling independently;
  * this hook only ever writes, so the two never contend over the same state.
+ *
+ * A 403 means this role cannot persist store settings — keep the local
+ * theme anyway so cashiers/servers/chefs can still switch appearance.
  */
 export function useThemeModeToggle() {
   const t = useTranslations('settings');
@@ -31,7 +40,8 @@ export function useThemeModeToggle() {
     setMode(next);
     try {
       await api.put('/settings/theme_mode', { value: next });
-    } catch {
+    } catch (err) {
+      if (responseStatus(err) === 403) return;
       setMode(previous);
       toast.error(t('saveFailed'));
     } finally {

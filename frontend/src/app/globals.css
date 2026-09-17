@@ -47,6 +47,11 @@
   --flo-sidebar-block-start: 0px;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   font-family: var(--font-sans);
 }

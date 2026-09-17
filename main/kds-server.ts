@@ -7,7 +7,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { closeServerResources, createShutdownCancellationError, installHttpShutdownTracking } from './shutdown';
-import { databaseMaintenanceMiddleware, getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isDatabaseMaintenanceActive, isKdsStationItemAllowed, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder } from './db';
+import { databaseMaintenanceMiddleware, getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isDatabaseMaintenanceActive, isKdsStationItemAllowed, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, activeKitchenOrderIdsSql, projectKdsItem, projectKdsOrder } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { getJWTSecret, parseCategoryIds } from './routes/auth';
 import { rateLimit, authRateLimit, staticRouteRateLimit, corsOptions, isTokenRevoked, isTokenStale, revokeToken } from './middleware/security';
@@ -296,12 +296,7 @@ export function startKdsServer(): Promise<void> {
           LEFT JOIN tables t ON o.table_id = t.id
           INNER JOIN order_items oi ON oi.order_id = o.id
           WHERE o.id IN (
-            SELECT id FROM orders WHERE status IN ('pending', 'preparing', 'ready', 'served')
-            UNION
-            SELECT active_o.id FROM orders active_o
-            JOIN order_items active_oi ON active_oi.order_id = active_o.id
-              AND active_oi.status NOT IN ('served', 'cancelled')
-            WHERE active_o.status NOT IN ('pending', 'preparing', 'ready', 'served', 'cancelled')
+            ${activeKitchenOrderIdsSql()}
           )
           AND oi.status NOT IN ('completed', 'cancelled', 'void_adjustment', 'refunded')
           AND (oi.status != 'voided' OR oi.voided_at IS NULL OR oi.voided_at > ?)

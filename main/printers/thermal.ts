@@ -93,8 +93,8 @@ const isMasBuild =
   (process as NodeJS.Process & { mas?: boolean }).mas === true;
 const PRINTER_DETECTION_TIMEOUT_MS = 10_000;
 
-const RECEIPT_BRANDING_NAME = 'Powered by FloPOS';
-const RECEIPT_BRANDING_URL = 'https://flopos.com';
+const RECEIPT_BRANDING_NAME = 'KorgenKassa';
+const RECEIPT_BRANDING_URL = '';
 export type PrinterColumnWidth = 36 | 42 | 48;
 
 export interface PrinterInfo {
@@ -1059,7 +1059,9 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
 
 export function appendPoweredByFooter(lines: string[]): void {
   lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING_NAME + '{/FONT_B}{/CENTER}');
-  lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING_URL + '{/FONT_B}{/CENTER}');
+  if (RECEIPT_BRANDING_URL) {
+    lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING_URL + '{/FONT_B}{/CENTER}');
+  }
 }
 
 /**

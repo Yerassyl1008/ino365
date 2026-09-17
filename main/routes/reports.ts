@@ -5,6 +5,7 @@ import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getOrdersWithItemsForBills } from './bills';
 import { aggregateTaxComponents } from '../services/tax-components';
+import { buildDayCloseReport, buildPeriodCloseReport } from '../services/day-close-report';
 
 const router = Router();
 
@@ -244,6 +245,84 @@ router.get('/financial-summary', requireRole(...ROLE_ACCESS.owner), (req: Reques
         paymentMethods: paymentMethodBreakdown(db, startDate, endDate, true, true),
         refunds,
       },
+    });
+  } catch (error: any) {
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/service-charge', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
+  try {
+    const today = utcTodayDate();
+    const startDate = reportDate(req.query.start_date, today);
+    const endDate = reportDate(req.query.end_date, startDate);
+    if ((req.query.start_date !== undefined && reportDate(req.query.start_date, '') === '')
+      || (req.query.end_date !== undefined && reportDate(req.query.end_date, '') === '')) {
+      return res.status(400).json({ error: 'start_date and end_date must use YYYY-MM-DD format' });
+    }
+    if (startDate > endDate) {
+      return res.status(400).json({ error: 'start_date must be on or before end_date' });
+    }
+    const [start] = utcDayBounds(startDate);
+    const [, end] = utcDayBounds(endDate);
+    const db = getDatabase();
+    const totals = db.prepare(`
+      SELECT
+        COUNT(*) AS order_count,
+        COALESCE(SUM(service_charge), 0) AS collected,
+        COALESCE(SUM(service_charge_owner_amount), 0) AS owner_share
+      FROM (
+        SELECT DISTINCT o.id, o.service_charge, o.service_charge_owner_amount
+        FROM bills b
+        JOIN orders o ON o.id = b.order_id
+        WHERE b.paid_at >= ? AND b.paid_at < ?
+          AND o.status != 'cancelled'
+          AND COALESCE(o.service_charge, 0) > 0
+      )
+    `).get(start, end) as { order_count: number; collected: number; owner_share: number };
+    const staffRows = db.prepare(`
+      SELECT o.user_id AS userId, u.name AS name,
+        COUNT(*) AS order_count,
+        COALESCE(SUM(o.service_charge), 0) AS collected,
+        COALESCE(SUM(o.service_charge_owner_amount), 0) AS owner_share,
+        COALESCE(SUM(o.service_charge - o.service_charge_owner_amount), 0) AS staff_share
+      FROM (
+        SELECT DISTINCT o.id, o.user_id, o.service_charge, o.service_charge_owner_amount
+        FROM bills b
+        JOIN orders o ON o.id = b.order_id
+        WHERE b.paid_at >= ? AND b.paid_at < ?
+          AND o.status != 'cancelled'
+          AND COALESCE(o.service_charge, 0) > 0
+      ) o
+      LEFT JOIN users u ON u.id = o.user_id
+      GROUP BY o.user_id
+      ORDER BY collected DESC, order_count DESC
+    `).all(start, end) as {
+      userId: string | null;
+      name: string | null;
+      order_count: number;
+      collected: number;
+      owner_share: number;
+      staff_share: number;
+    }[];
+    const collected = Number(totals.collected || 0);
+    const ownerShare = Number(totals.owner_share || 0);
+    res.json({
+      startDate,
+      endDate,
+      collected,
+      ownerShare,
+      staffShare: Number((collected - ownerShare).toFixed(2)),
+      orderCount: Number(totals.order_count || 0),
+      staff: staffRows.map((row) => ({
+        userId: row.userId,
+        name: row.name,
+        orderCount: Number(row.order_count),
+        collected: Number(row.collected),
+        ownerShare: Number(row.owner_share),
+        staffShare: Number(row.staff_share),
+      })),
     });
   } catch (error: any) {
     console.error('[API] Internal error:', error);
@@ -494,6 +573,34 @@ router.get('/tables', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, r
   }
 });
 
+// ── GET /day-close — printable Z-report for a day or inclusive date range ──
+router.get('/day-close', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+  try {
+    const hasRange = req.query.start_date !== undefined || req.query.end_date !== undefined;
+    if (hasRange) {
+      if ((req.query.start_date !== undefined && reportDate(req.query.start_date, '') === '')
+        || (req.query.end_date !== undefined && reportDate(req.query.end_date, '') === '')) {
+        return res.status(400).json({ error: 'start_date and end_date must use YYYY-MM-DD format' });
+      }
+      const startDate = reportDate(req.query.start_date, utcTodayDate());
+      const endDate = reportDate(req.query.end_date, startDate);
+      if (startDate > endDate) {
+        return res.status(400).json({ error: 'start_date must be on or before end_date' });
+      }
+      res.json({ report: buildPeriodCloseReport(startDate, endDate) });
+      return;
+    }
+    if (req.query.date !== undefined && reportDate(req.query.date, '') === '') {
+      return res.status(400).json({ error: 'date must use YYYY-MM-DD format' });
+    }
+    const date = reportDate(req.query.date, utcTodayDate());
+    res.json({ report: buildDayCloseReport(date) });
+  } catch (error: any) {
+    console.error('[API] Day-close report failed:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── GET /insights — dashboard metrics beyond today's snapshot ──────────────
 // AOV, top staff, top categories, busiest/idlest hour & day-of-week, and
 // average kitchen prep time, aggregated over a trailing window (default 30
@@ -593,6 +700,34 @@ router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get('/by-staff', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const today = utcTodayDate();
+    const startDate = reportDate(req.query.start_date, today);
+    const endDate = reportDate(req.query.end_date, today);
+    if (startDate > endDate) {
+      return res.status(400).json({ error: 'start_date must be on or before end_date' });
+    }
+    const [windowStart] = utcDayBounds(startDate);
+    const [, windowEnd] = utcDayBounds(endDate);
+    const staff = db.prepare(`
+      SELECT u.id as user_id, u.name, u.role,
+        COALESCE(SUM(o.total), 0) as revenue,
+        COUNT(o.id) as orderCount
+      FROM orders o
+      JOIN users u ON u.id = o.user_id
+      WHERE o.created_at >= ? AND o.created_at < ? AND o.status != 'cancelled'
+      GROUP BY u.id
+      ORDER BY revenue DESC
+    `).all(windowStart, windowEnd);
+    res.json({ startDate, endDate, staff });
+  } catch (error: any) {
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

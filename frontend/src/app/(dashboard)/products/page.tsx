@@ -6,7 +6,7 @@ import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
 import { Plus, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle } from 'lucide-react';
-import type { Product, Category, AddonGroup } from '@/lib/types';
+import type { Product, Category, AddonGroup, Ingredient } from '@/lib/types';
 import TagBadge, { tagLabel } from '@/components/pos/DietaryBadge';
 import { parseDbTimestamp } from '@/lib/utils';
 import ImageUploader from '@/components/products/ImageUploader';
@@ -16,6 +16,7 @@ import { useConfirm } from '@/hooks/use-confirm';
 import { nameToColor } from '@/lib/image-utils';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
+import RecipeEditor, { type RecipeLineDraft } from '@/components/warehouse/RecipeEditor';
 
 type PosKey = keyof AppConfig['Messages']['pos'];
 type ProductsKey = keyof AppConfig['Messages']['products'];
@@ -67,6 +68,7 @@ export default function ProductsPage() {
   const t = useTranslations('products');
   const tCommon = useTranslations('common');
   const tPos = useTranslations('pos');
+  const tWarehouse = useTranslations('warehouse');
 
   // Translate a raw tag string: known tags go through the `pos` namespace;
   // custom tags render a formatted name (reuses DietaryBadge's tagLabel).
@@ -103,6 +105,8 @@ export default function ProductsPage() {
     image_url: null as string | null,
   });
   const [imageTouched, setImageTouched] = useState(false);
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [recipeLines, setRecipeLines] = useState<RecipeLineDraft[]>([]);
 
   const [showCsvModal, setShowCsvModal] = useState(false);
   const [csvType, setCsvType] = useState<'categories' | 'products' | 'addons'>('categories');
@@ -123,6 +127,16 @@ export default function ProductsPage() {
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const isOwnerOrManager = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
 
+  useEffect(() => {
+    if (!isRestaurant) {
+      setIngredients([]);
+      return;
+    }
+    api.get('/warehouse/ingredients')
+      .then(({ data }) => setIngredients(data.ingredients || []))
+      .catch(() => setIngredients([]));
+  }, [isRestaurant]);
+
   const fetchData = async () => {
     try {
       const requests: Promise<{ data: Record<string, unknown> }>[] = [
@@ -134,6 +148,16 @@ export default function ProductsPage() {
       setProducts((prodRes.data.products as Product[]) || []);
       setCategories((catRes.data.categories as Category[]) || []);
       if (agRes) setAddonGroups((agRes.data.addon_groups as AddonGroup[]) || []);
+      if (isRestaurant) {
+        try {
+          const { data } = await api.get('/warehouse/ingredients');
+          setIngredients(data.ingredients || []);
+        } catch {
+          setIngredients([]);
+        }
+      } else {
+        setIngredients([]);
+      }
     } catch {
       toast.error(t('failedToLoad'));
     } finally {
@@ -247,11 +271,16 @@ export default function ProductsPage() {
     setImageTouched(false);
     setEditingProduct(null);
     setShowForm(false);
+    setRecipeLines([]);
   };
 
   const openCreate = () => {
     resetForm();
-    setForm((current) => ({ ...current, tax_category_id: defaultTaxCategoryId }));
+    setForm((current) => ({
+      ...current,
+      tax_category_id: defaultTaxCategoryId,
+      track_inventory: !isRestaurant,
+    }));
     setShowForm(true);
   };
 
@@ -281,6 +310,20 @@ export default function ProductsPage() {
       image_url: product.has_image ? 'EXISTING' : null,
     });
     setShowForm(true);
+    if (!isRestaurant) {
+      setRecipeLines([]);
+      return;
+    }
+    api.get(`/warehouse/recipes/${product.id}`)
+      .then(({ data }) => {
+        setRecipeLines(
+          (data.recipe || []).map((line: { ingredient_id: string; quantity: number }) => ({
+            ingredient_id: line.ingredient_id,
+            quantity: String(line.quantity),
+          })),
+        );
+      })
+      .catch(() => setRecipeLines([]));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -325,9 +368,24 @@ export default function ProductsPage() {
 
       if (editingProduct) {
         await api.put(`/products/${editingProduct.id}`, payload);
+        if (isRestaurant) {
+          await api.put(`/warehouse/recipes/${editingProduct.id}`, {
+            items: recipeLines
+              .filter((line) => line.ingredient_id && Number(line.quantity) > 0)
+              .map((line) => ({ ingredient_id: line.ingredient_id, quantity: Number(line.quantity) })),
+          });
+        }
         toast.success(t('updated'));
       } else {
-        await api.post('/products', payload);
+        const { data } = await api.post('/products', payload);
+        const productId = data?.product?.id;
+        if (isRestaurant && productId) {
+          await api.put(`/warehouse/recipes/${productId}`, {
+            items: recipeLines
+              .filter((line) => line.ingredient_id && Number(line.quantity) > 0)
+              .map((line) => ({ ingredient_id: line.ingredient_id, quantity: Number(line.quantity) })),
+          });
+        }
         toast.success(t('created'));
       }
       resetForm();
@@ -935,6 +993,13 @@ export default function ProductsPage() {
                       className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
                   </div>
                 </div>
+              )}
+              {isRestaurant && (
+              <div className="border border-border rounded-lg p-3 space-y-2">
+                <label className="block text-sm font-medium text-foreground">{tWarehouse('techCard')}</label>
+                <p className="text-xs text-muted-foreground">{tWarehouse('recipeHint')}</p>
+                <RecipeEditor ingredients={ingredients} lines={recipeLines} onChange={setRecipeLines} />
+              </div>
               )}
               <Button type="submit" className="w-full">
                 {editingProduct ? t('updateProduct') : t('createProduct')}

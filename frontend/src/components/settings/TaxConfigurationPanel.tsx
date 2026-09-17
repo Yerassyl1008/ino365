@@ -435,7 +435,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
   // plugin exists for this country. An already-installed pack (even inactive)
   // answers this without a network call; otherwise we ask the catalog once.
   // A failed/offline catalog check leaves it `null` (unknown) rather than
-  // wrongly disabled — FloCafe must keep working without internet access.
+  // wrongly disabled — KorgenKassa must keep working without internet access.
   const officialPackInstalled = useMemo(
     () => packs.some((pack) => pack.country === storeCountry && pack.publisher !== 'local'),
     [packs, storeCountry],

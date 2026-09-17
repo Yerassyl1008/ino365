@@ -9,8 +9,10 @@ import { Plus, Pencil, Trash2, X, ChevronDown, ChevronRight } from 'lucide-react
 import type { AddonGroup, Addon } from '@/lib/types';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useConfirm } from '@/hooks/use-confirm';
+import { useRestrictBusinessType } from '@/components/layout/AuthGuard';
 
 export default function AddonGroupsPage() {
+  const allowed = useRestrictBusinessType('restaurant', '/products');
   const t = useTranslations('addonGroups');
   const tCommon = useTranslations('common');
   const tPos = useTranslations('pos');
@@ -184,6 +186,8 @@ export default function AddonGroupsPage() {
       setMutating(false);
     }
   };
+
+  if (!allowed) return null;
 
   if (loading) {
     return (

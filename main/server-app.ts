@@ -6,7 +6,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { closeServerResources, createShutdownCancellationError, getHttpRequestSignal, installHttpShutdownTracking, trackHttpRequestWork } from './shutdown';
-import { databaseMaintenanceMiddleware, getDatabase, isServerAppEnabled } from './db';
+import { databaseMaintenanceMiddleware, getDatabase, isServerAppEnabled, verifyPin } from './db';
 import { getJWTSecret } from './routes/auth';
 import { authRateLimit, staticRouteRateLimit, corsOptions, isTokenRevoked, isTokenStale, rateLimit, revokeToken } from './middleware/security';
 import { getServerPort } from './server';
@@ -14,7 +14,7 @@ import { getDefaultServerAppPort, getServerAppPort as getActiveServerAppPort, se
 import { API_JSON_BODY_LIMIT } from './http-limits';
 import { buildCspHeader } from './csp';
 import { resolveContainedPath } from './lib/path-containment';
-import { ROLE_ACCESS } from '../shared/role-permissions';
+import { PIN_LOGIN_ROLES, ROLE_ACCESS } from '../shared/role-permissions';
 
 let serverApp: http.Server | null = null;
 let stopPromise: Promise<void> | null = null;
@@ -29,6 +29,18 @@ type ServerAppUser = {
   role: string;
   iat?: number;
 };
+
+function issueServerAppToken(user: { id: string; name: string; email: string; role: string }, remember: boolean) {
+  const token = jwt.sign(
+    { userId: user.id, email: user.email, role: user.role, jti: uuidv4() },
+    getJWTSecret(),
+    { expiresIn: remember ? '10d' : '24h' },
+  );
+  return {
+    access_token: token,
+    user: { id: user.id, name: user.name, email: user.email, role: user.role },
+  };
+}
 
 function normalizeEmail(email: unknown): string {
   return String(email || '').trim().toLowerCase();
@@ -212,18 +224,42 @@ export function startServerApp(): Promise<void> {
           return res.status(403).json({ error: 'Access denied. Only server, manager, or owner accounts allowed.' });
         }
 
-        const token = jwt.sign(
-          { userId: user.id, email: user.email, role: user.role, jti: uuidv4() },
-          getJWTSecret(),
-          { expiresIn: remember_me ? '10d' : '24h' },
-        );
-
-        res.json({
-          access_token: token,
-          user: { id: user.id, name: user.name, email: user.email, role: user.role },
-        });
+        const tokenPayload = issueServerAppToken(user, !!remember_me);
+        res.json(tokenPayload);
       } catch (error: any) {
         console.error('[Server App] Login error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    app.post('/api/auth/pin-login', authRateLimit(), (req: Request, res: Response) => {
+      if (!isServerAppEnabled()) return res.status(404).json({ error: 'Not found' });
+      try {
+        const pin = String(req.body?.pin ?? '');
+        const remember = !!(req.body?.remember_me ?? req.body?.rememberMe);
+        if (!/^\d{4,6}$/.test(pin)) {
+          return res.status(400).json({ error: 'PIN must be 4-6 numeric digits' });
+        }
+
+        const db = getDatabase();
+        const pinPlaceholders = PIN_LOGIN_ROLES.map(() => '?').join(', ');
+        const candidates = db.prepare(
+          `SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN (${pinPlaceholders})`,
+        ).all(...PIN_LOGIN_ROLES) as any[];
+        const matches = candidates.filter((user) => verifyPin(user.pin_hash, pin));
+
+        if (matches.length !== 1) {
+          return res.status(401).json({ error: 'Invalid PIN' });
+        }
+
+        const user = matches[0];
+        if (!SERVER_APP_ALLOWED_ROLES.has(user.role)) {
+          return res.status(403).json({ error: 'Access denied. Only server, manager, or owner accounts allowed.' });
+        }
+
+        res.json(issueServerAppToken(user, remember));
+      } catch (error: any) {
+        console.error('[Server App] PIN login error:', error);
         res.status(500).json({ error: 'Internal server error' });
       }
     });
@@ -247,6 +283,7 @@ export function startServerApp(): Promise<void> {
     app.get('/api/orders', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/orders'));
     app.post('/api/orders', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/orders'));
     app.post('/api/orders/:id/items', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, `/orders/${encodeURIComponent(String(req.params.id))}/items`));
+    app.patch('/api/order-items/:id/status', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, `/order-items/${encodeURIComponent(String(req.params.id))}/status`));
     app.get('/api/customers-search', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/customers-search'));
     app.get('/api/crm/lookup', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/crm/lookup'));
     app.post('/api/customers', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/customers'));

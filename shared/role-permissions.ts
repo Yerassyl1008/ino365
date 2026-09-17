@@ -1,5 +1,5 @@
 /**
- * Fixed FloCafe role definitions and authorization groups.
+ * Fixed KorgenKassa role definitions and authorization groups.
  *
  * Backend route gates import ROLE_ACCESS from this module. The renderer uses
  * PERMISSION_CAPABILITIES to render the read-only matrix, so the matrix stays
@@ -32,6 +32,8 @@ const ORDER_STATUS = ['owner', 'manager', 'cashier', 'server', 'chef'] as const 
 const ALL_STAFF = ['owner', 'manager', 'cashier', 'server', 'chef'] as const satisfies readonly Role[];
 const SERVER_APP = ['server', 'manager', 'owner'] as const satisfies readonly Role[];
 export const OPERATIONAL_ROLES = ['cashier', 'server', 'chef'] as const satisfies readonly Role[];
+/** Floor PIN login and personal shifts — chef uses KDS, not a waiter PIN. */
+export const PIN_LOGIN_ROLES = ['owner', 'manager', 'cashier', 'server'] as const satisfies readonly Role[];
 
 /** Named role groups used by backend middleware and frontend surface gates. */
 export const ROLE_ACCESS = {
@@ -45,6 +47,7 @@ export const ROLE_ACCESS = {
   allStaff: ALL_STAFF,
   serverApp: SERVER_APP,
   operational: OPERATIONAL_ROLES,
+  pinLogin: PIN_LOGIN_ROLES,
 } as const;
 
 export type RoleAccessKey = keyof typeof ROLE_ACCESS;
@@ -99,7 +102,9 @@ export const PERMISSION_CAPABILITIES = [
   { id: 'kds', area: 'kitchen', labelKey: 'kds', allowedRoles: ROLE_ACCESS.kitchen },
   { id: 'kdsPairing', area: 'kitchen', labelKey: 'kdsPairing', allowedRoles: ROLE_ACCESS.ownerManager },
   { id: 'kitchenStations', area: 'kitchen', labelKey: 'kitchenStations', allowedRoles: ROLE_ACCESS.ownerManager },
+  { id: 'warehouseManage', area: 'kitchen', labelKey: 'warehouseManage', allowedRoles: ROLE_ACCESS.ownerManager },
   { id: 'reports', area: 'reports', labelKey: 'reports', allowedRoles: ROLE_ACCESS.ownerManager },
+  { id: 'serviceChargeReport', area: 'reports', labelKey: 'serviceChargeReport', allowedRoles: ROLE_ACCESS.owner },
   { id: 'staffViewManage', area: 'staff', labelKey: 'staffViewManage', allowedRoles: ROLE_ACCESS.ownerManager },
   { id: 'staffOwnerManager', area: 'staff', labelKey: 'staffOwnerManager', allowedRoles: ROLE_ACCESS.owner },
   { id: 'operationalStaff', area: 'staff', labelKey: 'operationalStaff', allowedRoles: ROLE_ACCESS.ownerManager },
@@ -128,6 +133,10 @@ export function isRole(value: string | null | undefined): value is Role {
 
 export function hasRole(value: string | null | undefined, allowedRoles: readonly Role[]): boolean {
   return isRole(value) && allowedRoles.includes(value);
+}
+
+export function pinAllowedForRole(role: string | null | undefined): boolean {
+  return hasRole(role, PIN_LOGIN_ROLES);
 }
 
 export function capabilityAllows(capability: PermissionCapability, role: string | null | undefined): boolean {

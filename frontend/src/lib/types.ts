@@ -15,7 +15,7 @@ export interface Tenant {
   business_name: string;
   slug: string;
   database_name: string;
-  business_type: 'restaurant';
+  business_type: 'restaurant' | 'retail';
   service_model?: 'qsr' | 'finedine';
   country: string;
   currency: string;
@@ -41,6 +41,7 @@ export interface Category {
   is_active: boolean;
   color: string | null;
   icon: string | null;
+  business_scope?: 'restaurant' | 'retail' | 'both';
   children?: Category[];
   products?: Product[];
 }
@@ -115,7 +116,7 @@ export interface Table {
   id: string;
   name: string;
   capacity: number;
-  status: 'available' | 'occupied' | 'reserved' | 'cleaning' | 'held';
+  status: 'available' | 'occupied' | 'reserved' | 'cleaning' | 'held' | 'precheck';
   kitchen_station_id: number | null;
   floor: string | null;
   section: string | null;
@@ -125,6 +126,10 @@ export interface Table {
   reservation_customer_id?: number | null;
   reservation_customer_name?: string | null;
   reservation_customer_phone?: string | null;
+  order_total?: number | null;
+  stay_started_at?: string | null;
+  waiter_name?: string | null;
+  item_readiness?: Record<string, number> | null;
 }
 
 export interface Customer {
@@ -157,6 +162,7 @@ export interface Order {
   discount_amount: number;
   delivery_charge: number;
   packaging_charge?: number;
+  service_charge?: number;
   round_off?: number;
   tax_breakdown?: { title: string; rate: number; amount: number }[] | null;
   tax_snapshot?: TaxSnapshot[] | TaxSnapshot | null;
@@ -189,6 +195,8 @@ export interface OrderItem {
   tax_snapshot?: TaxSnapshot | null;
   addons: { id?: number | string | null; name: string; price?: number; quantity?: number }[] | null;
   special_instructions: string | null;
+  course?: number;
+  guest_seat?: number;
   status: 'pending' | 'preparing' | 'ready' | 'served' | 'cancelled' | 'voided' | 'void_adjustment';
 }
 
@@ -257,6 +265,50 @@ export interface KitchenStation {
   sort_order: number;
 }
 
+export type IngredientUnit = 'g' | 'kg' | 'ml' | 'l' | 'pcs';
+
+export interface Ingredient {
+  id: string;
+  name: string;
+  unit: IngredientUnit;
+  stock_quantity: number;
+  low_stock_threshold: number;
+  cost_per_unit: number;
+  is_active: boolean;
+  is_low?: boolean;
+}
+
+export interface RecipeLine {
+  id?: string;
+  product_id?: string;
+  ingredient_id: string;
+  quantity: number;
+  ingredient_name?: string;
+  unit?: IngredientUnit;
+  stock_quantity?: number;
+}
+
+export interface StockMovement {
+  id: number;
+  ingredient_id: string;
+  ingredient_name?: string;
+  unit?: IngredientUnit;
+  quantity: number;
+  reason: 'sale' | 'cancel' | 'restore' | 'receive' | 'waste' | 'count' | 'adjustment';
+  order_id?: number | null;
+  order_item_id?: number | null;
+  note?: string | null;
+  user_id?: string | null;
+  created_at: string;
+}
+
+export interface WarehouseProductRecipe {
+  id: string;
+  name: string;
+  recipe_lines?: number;
+  recipe: RecipeLine[];
+}
+
 // Cart types for POS
 export interface CartItem {
   id: string;
@@ -264,4 +316,6 @@ export interface CartItem {
   quantity: number;
   addons: Addon[];
   special_instructions: string;
+  guest_seat?: number;
+  course?: number;
 }

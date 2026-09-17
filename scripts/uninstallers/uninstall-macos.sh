@@ -1,14 +1,14 @@
 #!/bin/bash
-# Flo Cafe — standalone macOS uninstaller
+# KorgenKassa — standalone macOS uninstaller
 #
-# Removes the Flo Cafe app and its support files (preferences, caches, logs,
+# Removes the KorgenKassa app and its support files (preferences, caches, logs,
 # auto-update state). Your business data (SQLite database, backups, Master
 # PIN) is only deleted if you say so: interactively, you'll be asked
 # Delete or Keep; non-interactively, pass --purge-data to delete it or
 # leave it out to keep it.
 #
 # Download and run directly, no need to clone the repo:
-#   curl -fsSL https://github.com/FreeOpenSourcePOS/FloCafe/releases/latest/download/uninstall-macos.sh -o uninstall-macos.sh
+#   curl -fsSL https://github.com/FreeOpenSourcePOS/KorgenKassa/releases/latest/download/uninstall-macos.sh -o uninstall-macos.sh
 #   chmod +x uninstall-macos.sh
 #   ./uninstall-macos.sh
 #
@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-APP_NAME="Flo Cafe"
+APP_NAME="KorgenKassa"
 BUNDLE_ID="com.flo.desktop"
 PURGE_DATA=0
 DRY_RUN=0
@@ -59,7 +59,7 @@ remove_path() {
   fi
   # `set -e` would otherwise exit here and make the retry loop unreachable.
   rm -rf "$target" || true
-  # rm -f masks failures (e.g. a file still open by a not-fully-quit Flo Cafe
+  # rm -f masks failures (e.g. a file still open by a not-fully-quit KorgenKassa
   # process) -- verify instead of just trusting it and reporting success.
   for _ in 1 2 3 4 5 6; do
     if [ ! -e "$target" ] && [ ! -L "$target" ]; then break; fi
@@ -68,16 +68,16 @@ remove_path() {
   done
   if [ -e "$target" ] || [ -L "$target" ]; then
     echo -e "  \033[33mcould NOT fully remove $target -- some files are still in use.\033[0m"
-    echo -e "  \033[33mmake sure Flo Cafe is completely quit (check Activity Monitor), then re-run this script.\033[0m"
+    echo -e "  \033[33mmake sure KorgenKassa is completely quit (check Activity Monitor), then re-run this script.\033[0m"
   else
     log "removed $target"
   fi
 }
 
-step "Flo Cafe uninstaller (macOS)"
+step "KorgenKassa uninstaller (macOS)"
 if [ "$DRY_RUN" -eq 1 ]; then log "(dry run — nothing will actually be deleted)"; fi
 
-step "Quitting Flo Cafe if it's running…"
+step "Quitting KorgenKassa if it's running…"
 if pgrep -x "$APP_NAME" >/dev/null 2>&1; then
   run osascript -e "tell application \"$APP_NAME\" to quit" || true
   sleep 1
@@ -117,7 +117,7 @@ remove_path "$HOME/Library/HTTPStorages/$BUNDLE_ID"
 remove_path "$HOME/Library/WebKit/$BUNDLE_ID"
 
 # Electron's default userData dir comes from package.json's top-level "name"
-# ("flo-desktop"), not the electron-builder "productName" ("Flo Cafe") used
+# ("flo-desktop"), not the electron-builder "productName" ("KorgenKassa") used
 # for the .app bundle -- so the real data lives under "flo-desktop", not
 # under "$APP_NAME". Sweep both so stray data from either naming never
 # survives an uninstall.

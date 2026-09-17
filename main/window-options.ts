@@ -68,7 +68,7 @@ export function createMainWindow(
     height: 900,
     minWidth: 1024,
     minHeight: 768,
-    title: 'Flo',
+    title: 'KorgenKassa',
     titleBarStyle: platform === 'darwin' ? 'hiddenInset' : 'hidden',
     ...(resolvedTitleBarMode === 'native-overlay'
       ? {
@@ -138,7 +138,7 @@ export function getPopupWindowOptions(isBlank: boolean): BrowserWindowConstructo
   return {
     width: isBlank ? 800 : 1280,
     height: isBlank ? 600 : 800,
-    title: isBlank ? 'Print Receipt' : 'Flo - Kitchen Display',
+    title: isBlank ? 'Print Receipt' : 'KorgenKassa - Kitchen Display',
     autoHideMenuBar: isBlank,
     webPreferences: {
       contextIsolation: true,
@@ -151,7 +151,7 @@ export function getKdsWindowOptions(): BrowserWindowConstructorOptions {
   return {
     width: 1200,
     height: 800,
-    title: 'Flo - Kitchen Display',
+    title: 'KorgenKassa - Kitchen Display',
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

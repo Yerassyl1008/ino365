@@ -10,6 +10,7 @@ import { useKdsConnection } from '@/hooks/useKdsConnection';
 import { useSyncServerLanguage } from '@/lib/i18n';
 import { useTranslations } from 'use-intl';
 import type { KdsViewMode } from '@/hooks/useKdsView';
+import { useRestrictBusinessType } from '@/components/layout/AuthGuard';
 
 // Reads the kds_enabled setting directly (not the cached posSettings copy) so
 // this route reflects the current state even if the sidebar hasn't refreshed
@@ -50,11 +51,14 @@ function useDashboardKdsDefault(): KdsViewMode | null {
 }
 
 export default function KdsPage() {
+  const allowed = useRestrictBusinessType('restaurant', '/pos');
   useSyncServerLanguage();
   const t = useTranslations('kds');
   const conn = useKdsConnection({ api });
   const kdsDefaultView = useDashboardKdsDefault();
   const kdsEnabled = useKdsEnabledCheck();
+
+  if (!allowed) return null;
 
   if (kdsEnabled === null) {
     return (

@@ -687,8 +687,8 @@ class GoogleDriveService {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(
           error || !code || returnedState !== state
-            ? '<html><body>Google Drive connection failed. You can close this window and try again in Flo Cafe.</body></html>'
-            : '<html><body>Google Drive connected. You can close this window and return to Flo Cafe.</body></html>'
+            ? '<html><body>Google Drive connection failed. You can close this window and try again in KorgenKassa.</body></html>'
+            : '<html><body>Google Drive connected. You can close this window and return to KorgenKassa.</body></html>'
         );
 
         if (error) return finish(() => reject(new Error(`Google authorization failed: ${error}`)));
