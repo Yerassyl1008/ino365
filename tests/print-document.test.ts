@@ -430,7 +430,7 @@ console.log('\n▶ Kernel purity (static import audit)');
   const kernelDir = path.resolve(__dirname, '../shared/print');
   const allowedPrefixes = ['./', '../'];
   const forbidden = /\b(node:|require\(|electron|better-sqlite3|express|\.\.\/\.\.\/(main|frontend))/;
-  for (const file of ['document.ts', 'direction.ts', 'bilingual.ts', 'types.ts', 'policy.ts']) {
+  for (const file of ['document.ts', 'direction.ts', 'bilingual.ts', 'types.ts', 'policy.ts', 'cp866.ts']) {
     const source = fs.readFileSync(path.join(kernelDir, file), 'utf8');
     const imports = [...source.matchAll(/from\s+'([^']+)'/g)].map((match) => match[1]);
     for (const importPath of imports) {

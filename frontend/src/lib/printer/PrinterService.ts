@@ -324,19 +324,26 @@ class PrinterService {
     style.textContent = `
       @page { size: ${mmWidth} auto; margin: 0; }
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      body {
-        font-family: 'Courier New', monospace;
-        font-size: 12px;
-        line-height: 1.2;
+      html, body {
+        font-family: 'Courier New', Courier, monospace;
+        font-size: ${paperWidth === 58 ? '12px' : '13px'};
+        line-height: 1.25;
+        font-weight: 700;
         width: ${mmWidth};
         max-width: ${mmWidth};
-        margin: 0 auto;
-        padding: 4px;
+        margin: 0;
+        padding: 2mm;
+        color: #000;
+        background: #fff;
         text-align: left;
+        -webkit-font-smoothing: none;
+        font-smooth: never;
+        font-kerning: none;
       }
       @media print {
-        body { width: ${mmWidth} !important; max-width: ${mmWidth} !important; }
+        html, body { width: ${mmWidth} !important; max-width: ${mmWidth} !important; color: #000; background: #fff; }
         @page { size: ${mmWidth} auto; margin: 0; }
+        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       }
     `;
     printWindow.document.head.appendChild(style);

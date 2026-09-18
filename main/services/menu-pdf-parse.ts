@@ -1,7 +1,8 @@
 /**
- * Offline PDF menu extraction: pull a text layer, then heuristic-parse
- * dish / price / category / description lines typical of cafe menus.
+ * Offline PDF / photo menu extraction: text layer first, OCR for scans and photos.
  */
+
+import { ocrImage, ocrImages, pdfPagesAsImages, sniffImageKind } from './menu-ocr';
 
 export const MAX_PDF_BYTES = 15 * 1024 * 1024;
 export const MAX_PDF_PAGES = 40;
@@ -234,35 +235,90 @@ export async function extractPdfText(buffer: Buffer): Promise<{ text: string; pa
   }
 }
 
-export async function parseMenuPdf(buffer: Buffer, fallbackCategory = ''): Promise<ParseMenuResult & { pages: number; textLength: number }> {
-  const { text, pages } = await extractPdfText(buffer);
-  const parsed = parseMenuText(text, fallbackCategory);
-  if (text.trim().length < 20) {
-    parsed.warnings = ['scanned_or_empty', ...parsed.warnings.filter((w) => w !== 'no_items')];
-    if (parsed.items.length === 0 && !parsed.warnings.includes('no_items')) {
-      parsed.warnings.push('no_items');
+export async function parseMenuPdf(buffer: Buffer, fallbackCategory = ''): Promise<ParseMenuResult & { pages: number; textLength: number; ocr: boolean }> {
+  let text = '';
+  let pages = 0;
+  try {
+    const extracted = await extractPdfText(buffer);
+    text = extracted.text;
+    pages = extracted.pages;
+  } catch (error: any) {
+    if (error?.statusCode === 400 && /password|encrypted/i.test(String(error.message))) throw error;
+    // Image-only scans sometimes fail pdf-parse; OCR the pages instead.
+    text = '';
+    pages = 0;
+  }
+
+  let parsed = parseMenuText(text, fallbackCategory);
+  let ocr = false;
+  let usedText = text;
+
+  if (parsed.items.length === 0 || text.trim().length < 20) {
+    const images = await pdfPagesAsImages(buffer);
+    if (images.length > 0) {
+      const ocrText = await ocrImages(images);
+      const ocrParsed = parseMenuText(ocrText, fallbackCategory);
+      if (ocrParsed.items.length >= parsed.items.length) {
+        parsed = ocrParsed;
+        usedText = ocrText;
+        ocr = true;
+      }
+    }
+    if (!ocr && text.trim().length < 20) {
+      parsed.warnings = ['scanned_or_empty', ...parsed.warnings.filter((w) => w !== 'no_items')];
     }
   }
-  return { ...parsed, pages, textLength: text.trim().length };
+
+  if (ocr) parsed.warnings = ['ocr_used', ...parsed.warnings.filter((w) => w !== 'scanned_or_empty' && w !== 'no_items')];
+  if (parsed.items.length === 0 && !parsed.warnings.includes('no_items')) parsed.warnings.push('no_items');
+
+  return { ...parsed, pages, textLength: usedText.trim().length, ocr };
 }
 
-export function decodePdfBase64(raw: unknown): Buffer {
-  if (typeof raw !== 'string' || !raw.trim()) {
-    throw Object.assign(new Error('No PDF data provided'), { statusCode: 400 });
+export async function parseMenuImage(buffer: Buffer, fallbackCategory = ''): Promise<ParseMenuResult & { pages: number; textLength: number; ocr: boolean }> {
+  if (!Buffer.isBuffer(buffer) || !sniffImageKind(buffer)) {
+    throw Object.assign(new Error('File is not a supported photo (JPEG, PNG, WebP, BMP)'), { statusCode: 400 });
   }
-  const stripped = raw.trim().replace(/^data:application\/pdf;base64,/i, '');
+  if (buffer.length > MAX_PDF_BYTES) {
+    throw Object.assign(new Error(`Photo exceeds the ${MAX_PDF_BYTES}-byte size limit`), { statusCode: 400 });
+  }
+  const text = await ocrImage(buffer);
+  const parsed = parseMenuText(text, fallbackCategory);
+  parsed.warnings = ['ocr_used', ...parsed.warnings.filter((w) => w !== 'no_items')];
+  if (parsed.items.length === 0 && !parsed.warnings.includes('no_items')) parsed.warnings.push('no_items');
+  return { ...parsed, pages: 1, textLength: text.trim().length, ocr: true };
+}
+
+export async function parseMenuFile(buffer: Buffer, fallbackCategory = ''): Promise<ParseMenuResult & { pages: number; textLength: number; ocr: boolean }> {
+  if (buffer.length >= 5 && buffer.subarray(0, 5).toString('latin1') === '%PDF-') {
+    return parseMenuPdf(buffer, fallbackCategory);
+  }
+  if (sniffImageKind(buffer)) {
+    return parseMenuImage(buffer, fallbackCategory);
+  }
+  throw Object.assign(new Error('File must be a PDF or a photo (JPEG, PNG, WebP, BMP)'), { statusCode: 400 });
+}
+
+export function decodeMenuFileBase64(raw: unknown): Buffer {
+  if (typeof raw !== 'string' || !raw.trim()) {
+    throw Object.assign(new Error('No menu file provided'), { statusCode: 400 });
+  }
+  const stripped = raw.trim().replace(/^data:[^;]+;base64,/i, '');
   let buffer: Buffer;
   try {
     buffer = Buffer.from(stripped, 'base64');
   } catch {
-    throw Object.assign(new Error('Invalid PDF encoding'), { statusCode: 400 });
+    throw Object.assign(new Error('Invalid file encoding'), { statusCode: 400 });
   }
   if (!buffer.length) {
-    throw Object.assign(new Error('Invalid PDF encoding'), { statusCode: 400 });
+    throw Object.assign(new Error('Invalid file encoding'), { statusCode: 400 });
   }
-  // Base64 of a huge payload can decode to more than the raw-size cap.
   if (buffer.length > MAX_PDF_BYTES) {
-    throw Object.assign(new Error(`PDF exceeds the ${MAX_PDF_BYTES}-byte size limit`), { statusCode: 400 });
+    throw Object.assign(new Error(`File exceeds the ${MAX_PDF_BYTES}-byte size limit`), { statusCode: 400 });
   }
   return buffer;
+}
+
+export function decodePdfBase64(raw: unknown): Buffer {
+  return decodeMenuFileBase64(raw);
 }

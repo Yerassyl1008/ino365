@@ -61,6 +61,15 @@ const CATEGORY_COLORS: { key: string; labelKey: ProductsKey; bg: string; text: s
 
 type TabType = 'products' | 'categories' | 'addons';
 
+/** Menu tables: hide secondary columns on narrow containers; keep actions sticky. */
+const MENU_TABLE_WRAP = '@container bg-card rounded-xl border border-border overflow-x-auto';
+const MENU_TH = 'px-3 py-2.5 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap';
+const MENU_TD = 'px-3 py-2.5';
+const MENU_COL_ADDONS = 'hidden @min-[900px]:table-cell';
+const MENU_COL_SECONDARY = 'hidden @min-[1200px]:table-cell';
+const MENU_ACTIONS_TH = `${MENU_TH} sticky end-0 z-20 bg-muted text-end min-w-24 border-s border-border`;
+const MENU_ACTIONS_TD = `${MENU_TD} sticky end-0 z-10 bg-card group-hover:bg-muted text-end whitespace-nowrap min-w-24 border-s border-border`;
+
 function taxCategoryOptionLabel(tc: { label: string; rate_percent?: number | null }): string {
   return tc.rate_percent != null ? `${tc.label} (${tc.rate_percent}%)` : tc.label;
 }
@@ -537,7 +546,7 @@ export default function ProductsPage() {
   }
 
   return (
-    <div>
+    <div className="min-w-0">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
       </div>
@@ -574,19 +583,19 @@ export default function ProductsPage() {
           </div>
 
       {/* Product Table */}
-      <div className="bg-card rounded-xl border border-border overflow-hidden">
-        <table className="w-full">
+      <div className={MENU_TABLE_WRAP}>
+        <table className="w-max min-w-full">
           <thead className="bg-muted">
             <tr>
-              <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnProduct')}</th>
-              <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnCategory')}</th>
-              <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnAddons')}</th>
-              <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnPrice')}</th>
-              <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnTax')}</th>
-              {loyaltyEnabled && <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnCashback')}</th>}
-              <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnStock')}</th>
-              <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnStatus')}</th>
-              <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnActions')}</th>
+              <th className={`${MENU_TH} text-start`}>{t('columnProduct')}</th>
+              <th className={`${MENU_TH} text-start`}>{t('columnCategory')}</th>
+              <th className={`${MENU_TH} text-center ${MENU_COL_ADDONS}`}>{t('columnAddons')}</th>
+              <th className={`${MENU_TH} text-end`}>{t('columnPrice')}</th>
+              <th className={`${MENU_TH} text-start ${MENU_COL_SECONDARY}`}>{t('columnTax')}</th>
+              {loyaltyEnabled && <th className={`${MENU_TH} text-start ${MENU_COL_SECONDARY}`}>{t('columnCashback')}</th>}
+              <th className={`${MENU_TH} text-center ${MENU_COL_SECONDARY}`}>{t('columnStock')}</th>
+              <th className={`${MENU_TH} text-center`}>{t('columnStatus')}</th>
+              <th className={MENU_ACTIONS_TH}>{t('columnActions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -598,9 +607,9 @@ export default function ProductsPage() {
                 ? (matchedTaxCategory ? taxCategoryOptionLabel(matchedTaxCategory) : product.tax_category_id)
                 : '—';
               return (
-              <tr key={product.id} className="hover:bg-muted">
-                <td className="p-4 max-w-[220px]">
-                  <div className="flex items-center gap-3">
+              <tr key={product.id} className="group hover:bg-muted">
+                <td className={`${MENU_TD} max-w-[220px]`}>
+                  <div className="flex items-center gap-3 min-w-0">
                     <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 relative flex items-center justify-center">
                       <div
                         className="absolute inset-0 flex items-center justify-center"
@@ -619,8 +628,8 @@ export default function ProductsPage() {
                         />
                       )}
                     </div>
-                    <div>
-                      <p className="font-medium text-foreground">{product.name}</p>
+                    <div className="min-w-0">
+                      <p className="font-medium text-foreground truncate">{product.name}</p>
                       {product.sku && <p className="text-xs text-gray-400 mt-0.5">{t('skuLabel', { sku: product.sku })}</p>}
                       {product.barcode && <p className="text-xs text-gray-400 mt-0.5 font-mono">{t('barcodeLabel', { barcode: product.barcode })}</p>}
                       {product.tags && product.tags.length > 0 && (
@@ -631,7 +640,7 @@ export default function ProductsPage() {
                     </div>
                   </div>
                 </td>
-                <td className="p-4 text-sm text-muted-foreground">
+                <td className={`${MENU_TD} text-sm text-muted-foreground`}>
                   <div className="flex flex-col gap-0.5">
                     <span>{product.category?.name || '—'}</span>
                     {isCategoryInactive && (
@@ -641,7 +650,7 @@ export default function ProductsPage() {
                     )}
                   </div>
                 </td>
-                <td className="p-4 text-center">
+                <td className={`${MENU_TD} text-center ${MENU_COL_ADDONS}`}>
                   {product.addon_groups && product.addon_groups.length > 0 ? (
                     <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
                       {t('addonGroupCount', { count: product.addon_groups.length })}
@@ -650,11 +659,11 @@ export default function ProductsPage() {
                     <span className="text-gray-400 text-sm">—</span>
                   )}
                 </td>
-                <td className="p-4 text-end">
+                <td className={`${MENU_TD} text-end whitespace-nowrap`}>
                   <p className="font-medium">{fmt(Number(product.price))}</p>
                   {product.cost_price != null && product.cost_price > 0 && <p className="text-xs text-gray-400">{t('costLabel', { value: fmt(Number(product.cost_price)) })}</p>}
                 </td>
-                <td className="p-4 text-sm text-muted-foreground">
+                <td className={`${MENU_TD} text-sm text-muted-foreground ${MENU_COL_SECONDARY}`}>
                   <div className="flex flex-col gap-0.5">
                     <span>{taxLabel}</span>
                     {!product.tax_category_id && taxCategories.length > 0 && (
@@ -665,7 +674,7 @@ export default function ProductsPage() {
                   </div>
                 </td>
                 {loyaltyEnabled && (
-                  <td className="p-4 text-sm text-muted-foreground">
+                  <td className={`${MENU_TD} text-sm text-muted-foreground whitespace-nowrap ${MENU_COL_SECONDARY}`}>
                     {product.cb_percent === null || product.cb_percent === undefined ? (
                       <span>{globalCashbackPercent}% <span className="text-gray-400 text-xs">({t('cashbackGlobalBadge')})</span></span>
                     ) : product.cb_percent === 0 ? (
@@ -675,7 +684,7 @@ export default function ProductsPage() {
                     )}
                   </td>
                 )}
-                <td className="p-4 text-center">
+                <td className={`${MENU_TD} text-center ${MENU_COL_SECONDARY}`}>
                   {product.track_inventory ? (
                     <span className={`text-sm font-medium ${product.stock_quantity <= (product.low_stock_threshold || 0) ? 'text-red-600' : 'text-foreground'}`}>
                       {product.stock_quantity <= 0 ? tPos('outOfStock') : product.stock_quantity}
@@ -684,7 +693,7 @@ export default function ProductsPage() {
                     <span className="text-gray-400 text-sm">—</span>
                   )}
                 </td>
-                <td className="p-4 text-center">
+                <td className={`${MENU_TD} text-center`}>
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                     product.is_active ? 'bg-green-100 text-green-800' : 'bg-muted text-muted-foreground'
                   }`}>
@@ -694,8 +703,8 @@ export default function ProductsPage() {
                     <span className="text-[10px] text-amber-600 font-medium block mt-1">{t('hiddenOnPos')}</span>
                   )}
                 </td>
-                <td className="p-4 text-end">
-                  <div className="flex gap-2 justify-end">
+                <td className={MENU_ACTIONS_TD}>
+                  <div className="flex gap-1 justify-end">
                     {isOwnerOrManager && (
                       <>
                         <button onClick={() => openEdit(product)} className="p-1.5 text-gray-400 hover:text-brand">
@@ -1025,34 +1034,34 @@ export default function ProductsPage() {
               <Plus size={16} className="me-1" /> {t('addCategory')}
             </Button>
           </div>
-          <div className="bg-card rounded-xl border border-border overflow-hidden">
-            <table className="w-full">
+          <div className={MENU_TABLE_WRAP}>
+            <table className="w-max min-w-full">
               <thead className="bg-muted">
                 <tr>
-                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('categoryName')}</th>
-                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('categoryColor')}</th>
-                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnStatus')}</th>
-                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnActions')}</th>
+                  <th className={`${MENU_TH} text-start`}>{t('categoryName')}</th>
+                  <th className={`${MENU_TH} text-start`}>{t('categoryColor')}</th>
+                  <th className={`${MENU_TH} text-center`}>{t('columnStatus')}</th>
+                  <th className={MENU_ACTIONS_TH}>{t('columnActions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {categories.map((cat) => {
                   const colorObj = CATEGORY_COLORS.find((c) => c.key === cat.color);
                   return (
-                    <tr key={cat.id} className="hover:bg-muted">
-                      <td className="p-4 font-medium text-foreground">{cat.name}</td>
-                      <td className="p-4">
+                    <tr key={cat.id} className="group hover:bg-muted">
+                      <td className={`${MENU_TD} font-medium text-foreground`}>{cat.name}</td>
+                      <td className={MENU_TD}>
                         {colorObj ? (
                           <span className={`inline-flex px-2 py-1 rounded-lg text-xs font-medium ${colorObj.bg} ${colorObj.text}`}>{t(colorObj.labelKey)}</span>
                         ) : <span className="text-gray-400 text-sm">—</span>}
                       </td>
-                      <td className="p-4 text-center">
+                      <td className={`${MENU_TD} text-center`}>
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${cat.is_active ? 'bg-green-100 text-green-800' : 'bg-muted text-muted-foreground'}`}>
                           {cat.is_active ? 'Active' : 'Inactive'}
                         </span>
                       </td>
-                      <td className="p-4 text-end">
-                        <div className="flex gap-2 justify-end">
+                      <td className={MENU_ACTIONS_TD}>
+                        <div className="flex gap-1 justify-end">
                           {isOwnerOrManager && (
                             <>
                               <button onClick={() => openEditCategory(cat)} className="p-1.5 text-gray-400 hover:text-brand"><Pencil size={16} /></button>
@@ -1115,28 +1124,28 @@ export default function ProductsPage() {
               <Plus size={16} className="me-1" /> {t('addAddonGroup')}
             </Button>
           </div>
-          <div className="bg-card rounded-xl border border-border overflow-hidden">
-            <table className="w-full">
+          <div className={MENU_TABLE_WRAP}>
+            <table className="w-max min-w-full">
               <thead className="bg-muted">
                 <tr>
-                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('categoryName')}</th>
-                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnRequired')}</th>
-                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnSelection')}</th>
-                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnAddons')}</th>
-                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnActions')}</th>
+                  <th className={`${MENU_TH} text-start`}>{t('categoryName')}</th>
+                  <th className={`${MENU_TH} text-center`}>{t('columnRequired')}</th>
+                  <th className={`${MENU_TH} text-center hidden @min-[700px]:table-cell`}>{t('columnSelection')}</th>
+                  <th className={`${MENU_TH} text-center`}>{t('columnAddons')}</th>
+                  <th className={MENU_ACTIONS_TH}>{t('columnActions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {addonGroups.map((group) => (
-                  <tr key={group.id} className="hover:bg-muted">
-                    <td className="p-4 font-medium text-foreground">{group.name}</td>
-                    <td className="p-4 text-center">
+                  <tr key={group.id} className="group hover:bg-muted">
+                    <td className={`${MENU_TD} font-medium text-foreground`}>{group.name}</td>
+                    <td className={`${MENU_TD} text-center`}>
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${group.is_required ? 'bg-red-100 text-red-700' : 'bg-muted text-muted-foreground'}`}>{group.is_required ? tCommon('yes') : tCommon('no')}</span>
                     </td>
-                    <td className="p-4 text-center text-sm text-muted-foreground">{t('addonSelectionRange', { min: group.min_selection, max: group.max_selection })}</td>
-                    <td className="p-4 text-center text-sm text-muted-foreground">{group.addons?.length || 0}</td>
-                    <td className="p-4 text-end">
-                      <div className="flex gap-2 justify-end">
+                    <td className={`${MENU_TD} text-center text-sm text-muted-foreground hidden @min-[700px]:table-cell`}>{t('addonSelectionRange', { min: group.min_selection, max: group.max_selection })}</td>
+                    <td className={`${MENU_TD} text-center text-sm text-muted-foreground`}>{group.addons?.length || 0}</td>
+                    <td className={MENU_ACTIONS_TD}>
+                      <div className="flex gap-1 justify-end">
                         {isOwnerOrManager && (
                           <>
                             <button onClick={() => openEditAddonGroup(group)} className="p-1.5 text-gray-400 hover:text-brand"><Pencil size={16} /></button>

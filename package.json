@@ -75,7 +75,7 @@
     "test:country-provenance": "node tests/run-electron-node-test.cjs tests/country-provenance.test.ts",
     "test:static-routes": "ts-node --transpile-only -P tests/tsconfig.json tests/path-containment.test.ts && node tests/run-electron-node-test.cjs tests/static-route-resolution.test.ts",
     "test:notes-validation": "ts-node --transpile-only -P tests/tsconfig.json tests/order-notes-validation.test.ts",
-    "test:first-run": "node tests/run-electron-node-test.cjs tests/first-run-setup.test.ts && node tests/run-electron-node-test.cjs tests/setup-failure-recovery.test.ts",
+    "test:first-run": "node tests/run-electron-node-test.cjs tests/first-run-setup.test.ts && node tests/run-electron-node-test.cjs tests/setup-failure-recovery.test.ts && node tests/run-electron-node-test.cjs tests/catalog-templates.test.ts",
     "test:security": "node tests/run-electron-node-test.cjs tests/security-hardening.test.ts",
     "test:staff-authz": "node tests/run-electron-node-test.cjs tests/staff-authz.test.ts",
     "test:waiter-floor": "node tests/run-electron-node-test.cjs tests/waiter-floor.test.ts",
@@ -128,7 +128,7 @@
     "test:menu-pdf": "node tests/run-electron-node-test.cjs tests/menu-pdf-import.test.ts",
     "test:integration-loyalty-redemption": "node tests/run-electron-node-test.cjs tests/integration-loyalty-redemption.test.ts",
     "test:issue-24": "node tests/run-electron-node-test.cjs tests/issue-24-cancel-item-checkout.test.ts",
-    "test:issue-134-routing": "node tests/run-electron-node-test.cjs tests/issue-134-station-routing.test.ts",
+    "test:issue-134-routing": "ts-node --transpile-only -P tests/tsconfig.json tests/kot-routing.test.ts && node tests/run-electron-node-test.cjs tests/issue-134-station-routing.test.ts",
     "test:issue-134-mgmt": "node tests/run-electron-node-test.cjs tests/issue-134-station-management.test.ts",
     "test:issue-133-kds-kot-toggles": "node tests/run-electron-node-test.cjs tests/issue-133-kds-kot-toggles.test.ts",
     "test:issue-137-barcode": "node tests/run-electron-node-test.cjs tests/issue-137-barcode.test.ts",
@@ -241,6 +241,7 @@
   },
   "dependencies": {
     "@googleapis/drive": "^21.0.0",
+    "@napi-rs/canvas": "^1.0.9",
     "@point-of-sale/receipt-printer-encoder": "^3.0.3",
     "@whiskeysockets/baileys": "^7.0.0-rc14",
     "bcryptjs": "^3.0.3",
@@ -255,8 +256,10 @@
     "jsonwebtoken": "^9.0.2",
     "libphonenumber-js": "^1.13.11",
     "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^4.10.38",
     "pino": "^10.3.1",
     "qrcode": "^1.5.3",
+    "tesseract.js": "^5.1.1",
     "uuid": "^14.0.2",
     "ws": "^8.21.2"
   },
@@ -266,7 +269,12 @@
     "icon": "assets/icon-512.png",
     "afterPack": "scripts/afterPack.js",
     "asar": true,
-    "asarUnpack": "**/node_modules/better-sqlite3/**/*",
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**/*",
+      "**/node_modules/tesseract.js/**/*",
+      "**/node_modules/tesseract.js-core/**/*",
+      "**/node_modules/@napi-rs/canvas/**/*"
+    ],
     "directories": {
       "output": "release"
     },
@@ -292,6 +300,10 @@
       {
         "from": "frontend/out",
         "to": "frontend-out"
+      },
+      {
+        "from": "resources/tessdata",
+        "to": "tessdata"
       }
     ],
     "win": {

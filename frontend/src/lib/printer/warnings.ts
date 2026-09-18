@@ -10,7 +10,7 @@
  * why.
  */
 
-import { CURRENCY_ASCII_MAP, foldThermalText } from './unicode';
+import { CURRENCY_ASCII_MAP, foldThermalText, selectCyrillicCodepage } from './unicode';
 
 export interface PrintWarning {
   field: string;
@@ -22,7 +22,7 @@ export interface PrintWarning {
 const SUPPORTED_CURRENCY_SYMBOLS = new RegExp(`[${Object.keys(CURRENCY_ASCII_MAP).join('')}]`, 'g');
 
 export function hasUnsupportedPrinterChars(text: string): boolean {
-  return /[^\x00-\x7F]/.test(text.replace(SUPPORTED_CURRENCY_SYMBOLS, ''));
+  return /[^\x00-\x7F]/.test(text.replace(SUPPORTED_CURRENCY_SYMBOLS, '').replace(/[А-яЁё]/g, ''));
 }
 
 const ARABIC_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
@@ -163,5 +163,6 @@ export function safePrinterText<T extends { text(value: string): T }>(
     warnings?.push(makePrintWarning(value, isStoreName));
     return enc;
   }
+  selectCyrillicCodepage(enc as T & { codepage?(name: string): T }, language, printableValue);
   return enc.text(printableValue);
 }

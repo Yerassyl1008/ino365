@@ -107,6 +107,7 @@ restrictions over [`shared/`](../shared/).
 | [`bilingual.ts`](../shared/print/bilingual.ts) | `BilingualLabel`, width-fit strategies (`inline` vs `stacked`) | [#441](https://github.com/FreeOpenSourcePOS/FloCafe/issues/441) |
 | [`document.ts`](../shared/print/document.ts) | `PrintDocument` v1 / `KotDocument` v1 models + pure builders | [#442](https://github.com/FreeOpenSourcePOS/FloCafe/issues/442)/[#443](https://github.com/FreeOpenSourcePOS/FloCafe/issues/443) |
 | [`merchant-template.ts`](../shared/print/merchant-template.ts) | semantic merchant template payload validation, offline transfer envelope, `applyMerchantTemplate` | [#447](https://github.com/FreeOpenSourcePOS/FloCafe/issues/447)/[#448](https://github.com/FreeOpenSourcePOS/FloCafe/issues/448) |
+| [`cp866.ts`](../shared/print/cp866.ts) | PC866 encode/decode + leftover-Cyrillic folding for native ESC/POS Cyrillic | receipt sharpness |
 
 Dependency direction is one-way: registry → call site → kernel. The central
 language registry ([frontend/src/lib/i18n/languages.ts](../frontend/src/lib/i18n/languages.ts))
@@ -401,7 +402,8 @@ Renderers consume capabilities, they never guess them:
 
 - Desktop ESC/POS: lines whose content the target printer cannot render are
   skipped with an explicit warning unless the profile's shaping flag (or a
-  request-level override) admits strict ASCII+Arabic lines
+  request-level override) admits strict ASCII+Arabic lines, or the line is
+  PC866-encodable Cyrillic (native `ESC t 17` on CIS-market firmware)
   (`buildEscPos` guard in [`main/printers/thermal.ts`](../main/printers/thermal.ts)).
 - The migrated WebUSB receipt path uses `safePrinterText` for renderer-managed
   text and its warning behavior ([`frontend/src/lib/printer/receipt-encoder.ts`](../frontend/src/lib/printer/receipt-encoder.ts),

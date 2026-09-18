@@ -236,7 +236,7 @@ export default function AddonGroupsPage() {
                     </p>
                   </div>
                 </button>
-                <div className="flex gap-2">
+                <div className="flex gap-2 shrink-0">
                   <button onClick={() => openEdit(group)} disabled={mutating} className="p-1.5 text-gray-400 hover:text-brand disabled:opacity-50">
                     <Pencil size={16} />
                   </button>
@@ -270,7 +270,7 @@ export default function AddonGroupsPage() {
                         ) : (
                           <>
                             <span className="text-sm text-foreground">{addon.name}</span>
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3 shrink-0">
                               <span className="text-sm font-medium text-foreground">
                                 {Number(addon.price) === 0 ? tPos('free') : fmt(Number(addon.price))}
                               </span>

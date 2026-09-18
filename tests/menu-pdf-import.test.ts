@@ -29,7 +29,8 @@ const {
   closeDatabase,
   now,
 } = require('./helpers/test-setup');
-const { parseMenuText } = require('../main/services/menu-pdf-parse');
+const { parseMenuText, decodeMenuFileBase64 } = require('../main/services/menu-pdf-parse');
+const { sniffImageKind, extractEmbeddedJpegs } = require('../main/services/menu-ocr');
 const { menuPdfRoutes } = require('../main/routes/menu-pdf');
 
 function makeSimplePdf(lines: string[]): Buffer {
@@ -143,6 +144,17 @@ async function main() {
       headers: authHeader,
     });
     assertEqual(notPdf.status, 400, 'non-PDF bytes are rejected');
+
+    console.log('\n─── photo / scan sniff ───');
+    const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=', 'base64');
+    assertEqual(sniffImageKind(jpeg), 'jpeg', 'detects JPEG magic bytes');
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    assertEqual(sniffImageKind(png), 'png', 'detects PNG magic bytes');
+    assertEqual(sniffImageKind(Buffer.from('hello')), null, 'rejects random bytes as an image');
+    const jpegInPdf = Buffer.concat([Buffer.from('%PDF-1.4\n'), jpeg, Buffer.from('\n%%EOF\n')]);
+    assertEqual(extractEmbeddedJpegs(jpegInPdf).length, 0, 'ignores tiny embedded JPEGs');
+    const photoB64 = decodeMenuFileBase64(`data:image/jpeg;base64,${jpeg.toString('base64')}`);
+    assertEqual(sniffImageKind(photoB64), 'jpeg', 'strips a photo data URL');
 
     console.log('\n─── Import merge (default) ───');
     const merged = await api(baseUrl, '/api/menu-pdf/import', {

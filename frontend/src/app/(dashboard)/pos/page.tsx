@@ -35,7 +35,7 @@ import { useSupportTicketStatus } from '@/hooks/useSupportTicketStatus';
 import { useSupportDiagnosticsPreview } from '@/hooks/useSupportDiagnosticsPreview';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { resolveScannedProduct } from '@/lib/scale-barcode';
-import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
+import { ROLE_ACCESS, canAccessPos, hasRole } from '@shared/role-permissions';
 import { getLandingPage } from '@/components/layout/AuthGuard';
 import {
   buildAppendItemsFingerprint,
@@ -77,7 +77,7 @@ export default function POSPage() {
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
-  const { customerMandatory, autoPrintKot, autoPrintBill, billingType, tablesRequired, kotPrintingEnabled, setBillingType, setTablesRequired, setKotPrintingEnabled } = usePosSettingsStore();
+  const { customerMandatory, autoPrintKot, autoPrintBill, billingType, tablesRequired, kotPrintingEnabled, setBillingType, setTablesRequired, setKotPrintingEnabled, setAutoPrintKot } = usePosSettingsStore();
   const { open: leftSidebarOpen } = useSidebar();
   const t = useTranslations('pos');
   const tSupport = useTranslations('support');
@@ -252,7 +252,7 @@ export default function POSPage() {
     : `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
-  const { printBill, printKot } = usePrinterStore();
+  const { printBill, printKot, hardwarePrinter, printMethod } = usePrinterStore();
   const billingIsPrepaid = billingType === 'prepaid';
   const shouldTakePaymentNow = billingIsPrepaid;
 
@@ -262,6 +262,10 @@ export default function POSPage() {
     // preference (issue #133).
     if (!kotPrintingEnabled) return;
     if (!autoPrintKot) return;
+    // USB/LAN printers are attached to the till. The API already auto-prints
+    // kitchen/bar tickets after create/append so waiter phones don't need a
+    // printer — skip a second ticket from this renderer.
+    if (printMethod === 'escpos' && hardwarePrinter) return;
 
     try {
       const printWarnings = await printKot(order, order.items ? { items: order.items } : undefined);
@@ -404,9 +408,10 @@ export default function POSPage() {
   }, [activeUserId]);
 
   useEffect(() => {
-    const landing = getLandingPage(currentTenant?.role, currentTenant?.business_type);
-    // Kitchen-only staff cannot operate POS; owners still can after landing on the workbench.
-    if (landing === '/kds') router.replace(landing);
+    // Kitchen-only staff cannot operate POS; waiters use this till with PIN.
+    if (!canAccessPos(currentTenant?.role)) {
+      router.replace(getLandingPage(currentTenant?.role, currentTenant?.business_type));
+    }
   }, [currentTenant?.role, currentTenant?.business_type, router]);
 
   useEffect(() => {
@@ -416,7 +421,7 @@ export default function POSPage() {
   }, [isRestaurant, cart.orderType, cart.setOrderType]);
 
   useEffect(() => {
-    if (getLandingPage(currentTenant?.role, currentTenant?.business_type) === '/kds') {
+    if (!canAccessPos(currentTenant?.role)) {
       return;
     }
     const fetchData = async () => {
@@ -430,6 +435,9 @@ export default function POSPage() {
 
         api.get('/settings/kot_printing_enabled')
           .then((res) => setKotPrintingEnabled(res.data.setting?.value !== 'false'))
+          .catch(() => {});
+        api.get('/settings/auto_print_kot')
+          .then((res) => setAutoPrintKot(res.data.setting?.value !== 'false'))
           .catch(() => {});
 
         // 2. Fetch other menu data

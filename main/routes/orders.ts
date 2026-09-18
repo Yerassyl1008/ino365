@@ -16,6 +16,7 @@ import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { consumeOrderItemIngredients, restoreOrderItemIngredients } from '../services/kitchen-inventory';
 import { computeServiceChargeFields } from '../services/service-charge';
+import { maybeAutoPrintKot } from '../services/kot-print';
 import expressRateLimit from 'express-rate-limit';
 
 const router = Router();
@@ -634,6 +635,7 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
     if (!result.idempotentReplay) {
       notifyKdsUpdate();
       cloudSync.recordOrderChanged(result.order.id, 'order.created');
+      maybeAutoPrintKot(result.order.id, result.orderItems);
 
       if (customer_id) {
         try {
@@ -745,6 +747,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
           modifier_selection, special_instructions, course, guest_seat, status, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `);
+      const appendedIds: number[] = [];
 
       for (const item of items) {
         const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
@@ -797,6 +800,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
           JSON.stringify(item.modifier_selection || null),
           item.special_instructions || null, course, guest_seat, itemCreatedAt, itemCreatedAt
         );
+        appendedIds.push(Number(insertItemResult.lastInsertRowid));
         insertOrderItemAddons(db, insertItemResult.lastInsertRowid, item.addons, itemCreatedAt);
         consumeOrderItemIngredients(db, {
           orderId: String(req.params.id),
@@ -905,12 +909,16 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
         db.prepare('INSERT INTO order_idempotency (user_id, idempotency_key, request_hash, response_json, created_at) VALUES (?, ?, ?, ?, ?)')
           .run(idempotencyUserId, idempotencyKey, requestHash, JSON.stringify(response), now());
       }
-      return { updatedOrder, updatedItems, replayResponse: null };
+      return { updatedOrder, updatedItems, appendedIds, replayResponse: null };
     });
 
     if (result.replayResponse) return res.json(result.replayResponse);
     cloudSync.recordOrderChanged(req.params.id as string, 'order.updated');
     notifyKdsUpdate();
+    const appendedItems = (result.updatedItems || []).filter((item: any) =>
+      (result.appendedIds || []).includes(Number(item.id)),
+    );
+    maybeAutoPrintKot(result.updatedOrder.id, appendedItems.length > 0 ? appendedItems : result.updatedItems);
 
     res.json({ order: Object.assign({}, result.updatedOrder, { items: result.updatedItems }) });
   } catch (error: any) {

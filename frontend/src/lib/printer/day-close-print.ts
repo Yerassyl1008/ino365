@@ -216,21 +216,24 @@ export function generateDayCloseHtml(input: DayClosePrintInput): string {
   <title>${escapeHtml(L.title)}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: ui-monospace, 'Cascadia Mono', 'Segoe UI', Tahoma, sans-serif; font-size: 12px; color: #111; }
+    @page { size: 80mm auto; margin: 0; }
+    html, body { width: 80mm; max-width: 80mm; margin: 0; color: #000; background: #fff; }
+    body { font-family: 'Courier New', Courier, ui-monospace, monospace; font-size: 12px; font-weight: 700; color: #000; -webkit-font-smoothing: none; font-smooth: never; }
     .sheet { max-width: 80mm; margin: 0 auto; padding: 8px; }
-    h1 { font-size: 15px; text-align: center; margin-bottom: 6px; }
-    .meta { text-align: center; margin-bottom: 2px; font-size: 11px; }
+    h1 { font-size: 16px; font-weight: 800; text-align: center; margin-bottom: 6px; }
+    .meta { text-align: center; margin-bottom: 2px; font-size: 12px; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-    th, td { padding: 2px 0; vertical-align: top; }
-    th { font-size: 10px; text-align: start; border-bottom: 1px solid #111; }
-    .section { font-weight: bold; text-align: center; margin: 10px 0 4px; border-top: 1px dashed #111; padding-top: 8px; }
+    th, td { padding: 2px 0; vertical-align: top; color: #000; }
+    th { font-size: 11px; text-align: start; border-bottom: 1px solid #000; }
+    .section { font-weight: 800; text-align: center; margin: 10px 0 4px; border-top: 1px dashed #000; padding-top: 8px; }
     .num { text-align: end; unicode-bidi: isolate; white-space: nowrap; }
-    .total td { border-top: 1px solid #111; font-weight: bold; }
+    .total td { border-top: 1px solid #000; font-weight: 800; }
     .kv td:last-child { text-align: end; }
-    .footer { text-align: center; margin-top: 12px; font-size: 10px; color: #555; }
+    .footer { text-align: center; margin-top: 12px; font-size: 11px; color: #000; }
     @media print {
       .no-print { display: none !important; }
-      body { margin: 0; }
+      html, body { width: 80mm !important; max-width: 80mm !important; margin: 0; color: #000; }
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
   </style>
 </head>

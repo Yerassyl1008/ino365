@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { FileText, Upload, X, CheckCircle, AlertCircle } from 'lucide-react';
+import { FileText, Image as ImageIcon, Upload, X, CheckCircle, AlertCircle } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { useConfirm } from '@/hooks/use-confirm';
 
@@ -93,8 +93,8 @@ export default function PdfMenuImportModal({
     setSkippedCount(0);
     setParsing(true);
     try {
-      const pdf_base64 = await fileToBase64(file);
-      const res = await api.post('/menu-pdf/parse', { pdf_base64 });
+      const file_base64 = await fileToBase64(file);
+      const res = await api.post('/menu-pdf/parse', { file_base64, pdf_base64: file_base64 });
       const parsed = (res.data.items || []) as Omit<PreviewItem, 'selected'>[];
       setItems(parsed.map((item) => ({
         name: item.name || '',
@@ -172,22 +172,22 @@ export default function PdfMenuImportModal({
 
             <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-border rounded-xl cursor-pointer hover:bg-muted transition-colors">
               <Upload size={20} className="text-gray-400 mb-1" />
-              <span className="text-sm text-muted-foreground">
+              <span className="text-sm text-muted-foreground text-center px-3">
                 {parsing ? t('pdfParsing') : fileName || t('pdfChooseFile')}
               </span>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="application/pdf,.pdf"
+                accept="application/pdf,.pdf,image/jpeg,.jpg,.jpeg,image/png,.png,image/webp,.webp,image/bmp,.bmp,image/gif,.gif"
                 className="hidden"
                 onChange={(e) => { void handleFile(e.target.files?.[0]); }}
               />
             </label>
 
-            {warnings.includes('scanned_or_empty') && (
+            {(warnings.includes('ocr_used') || warnings.includes('scanned_or_empty')) && (
               <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                 <AlertCircle size={16} className="mt-0.5 shrink-0" />
-                {t('pdfScannedHint')}
+                {warnings.includes('ocr_used') ? t('pdfOcrHint') : t('pdfScannedHint')}
               </div>
             )}
 
@@ -331,7 +331,8 @@ export function PdfMenuImportButton({ onImported }: { onImported: () => void }) 
   return (
     <>
       <Button variant="outline" onClick={() => setOpen(true)}>
-        <FileText size={16} className="me-1" /> {t('pdfImport')}
+        <FileText size={16} className="me-1" />
+        <ImageIcon size={16} className="me-1" /> {t('pdfImport')}
       </Button>
       <PdfMenuImportModal open={open} onClose={() => setOpen(false)} onImported={onImported} />
     </>

@@ -47,6 +47,8 @@ never kernel → registry.
 | `direction.ts`| Per-scope direction (`document` / `block` / `value`), LTR-island classification |
 | `bilingual.ts`| `BilingualLabel` + width-fit strategies (`inline` vs `stacked`) parameterized by column count |
 | `document.ts` | Renderer-independent `PrintDocument` v1 / `KotDocument` v1 (#442/#443): receipt and kitchen-ticket block types, `PrintData`/`PrintContext` snapshots, and pure `buildBillDocument` / `buildKotDocument`. Schema and extension policy documented in [docs/printing-architecture.md](../../docs/printing-architecture.md) (#449) |
+| `merchant-template.ts` | Semantic merchant template payload validation, offline transfer envelope, `applyMerchantTemplate` |
+| `cp866.ts`    | PC866 encode/decode and leftover-Cyrillic folding for native ESC/POS Cyrillic |
 
 Consumers: `main/*` imports the relative path `../../shared/print` and gets
 one compiled runtime copy under `dist/shared/print`; `frontend/*` imports

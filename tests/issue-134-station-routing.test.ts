@@ -3,10 +3,13 @@
  *
  * Replaces the earlier send_to_kitchen boolean idea. Each kitchen station
  * (kitchen, bar, dessert counter, etc.) can be linked to a printer and a set
- * of categories; KOT items are split and routed to whichever station's
- * printer their category belongs to. Items with no matching station, and
- * the whole order when no stations are configured at all, fall back to the
- * plain default-printer ticket — no behavior change for stores not using
+ * of categories; KOT items are split and routed to whichever station
+ * their category belongs to. A station printer is optional — mixed cafe
+ * orders still produce two tickets (kitchen food / bar drinks), falling back
+ * to the default printer until hardware is assigned. Skip categories
+ * (tobacco) never print a kitchen/bar ticket. Items with no matching station,
+ * and the whole order when no stations are configured at all, fall back to
+ * the plain default-printer ticket — no behavior change for stores not using
  * stations.
  *
  * This tests routeItemsToStations() directly — no printer dispatch involved,
@@ -122,9 +125,66 @@ function main() {
     db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, printer_id, is_active) VALUES ('stn-webusb', 'Browser Bar', ?, 'pr-webusb', 1)`).run(JSON.stringify(['cat-bev']));
 
     const groups = routeItemsToStations(db, [{ product_id: 'prod-bev' }]);
-    assertEqual(groups.length, 1, 'F: WebUSB station falls back to one generic Kitchen group');
-    assertEqual(groups[0].stationName, 'Kitchen', 'F: WebUSB station does not receive backend KOT items');
-    assert(groups[0].printer === null, 'F: fallback group leaves printer selection to the backend fallback');
+    assertEqual(groups.length, 1, 'F: WebUSB station still produces one bar ticket');
+    assertEqual(groups[0].stationName, 'Browser Bar', 'F: bar items keep the bar station label');
+    assertEqual(groups[0].items[0].product_id, 'prod-bev', 'F: WebUSB station still receives the beverage');
+    assert(groups[0].printer === null, 'F: WebUSB printer is not used for backend dispatch');
+  }
+
+  console.log('\n─── Scenario G: cafe kitchen + bar stations split tickets without printers ───');
+  {
+    const { seedExpressRestaurantCatalog } = require('../main/services/catalog-templates');
+    db.prepare('DELETE FROM kitchen_stations').run();
+    seedExpressRestaurantCatalog(db, 'en');
+
+    const foodOnly = routeItemsToStations(db, [{ product_id: 'prod-express-domashnyaya-lapsha' }]);
+    assertEqual(foodOnly.length, 1, 'G: food-only order is one ticket');
+    assertEqual(foodOnly[0].stationName, 'Kitchen', 'G: food goes to Kitchen');
+    assertEqual(foodOnly[0].items.length, 1, 'G: kitchen ticket has the food item');
+    assert(foodOnly[0].printer === null, 'G: kitchen printer stays unassigned until Settings');
+
+    const drinkOnly = routeItemsToStations(db, [{ product_id: 'prod-express-coca-cola' }]);
+    assertEqual(drinkOnly.length, 1, 'G: drink-only order is one ticket');
+    assertEqual(drinkOnly[0].stationName, 'Bar', 'G: drinks go to Bar');
+    assertEqual(drinkOnly[0].items[0].product_id, 'prod-express-coca-cola', 'G: bar ticket has the drink');
+
+    const mixed = routeItemsToStations(db, [
+      { product_id: 'prod-express-domashnyaya-lapsha' },
+      { product_id: 'prod-express-coca-cola' },
+      { product_id: 'prod-express-absolut' },
+    ]);
+    assertEqual(mixed.length, 2, 'G: mixed order produces two tickets, not one combined ticket');
+    const mixedKitchen = mixed.find((g: any) => g.stationName === 'Kitchen');
+    const mixedBar = mixed.find((g: any) => g.stationName === 'Bar');
+    assert(!!mixedKitchen && !!mixedBar, 'G: mixed order has Kitchen and Bar groups');
+    assertEqual(mixedKitchen.items.length, 1, 'G: kitchen ticket has food only');
+    assertEqual(mixedKitchen.items[0].product_id, 'prod-express-domashnyaya-lapsha', 'G: kitchen ticket is the soup');
+    assertEqual(mixedBar.items.length, 2, 'G: bar ticket has both drinks');
+    assert(mixedBar.items.some((item: any) => item.product_id === 'prod-express-coca-cola'), 'G: bar ticket includes cola');
+    assert(mixedBar.items.some((item: any) => item.product_id === 'prod-express-absolut'), 'G: bar ticket includes alcohol');
+  }
+
+  console.log('\n─── Scenario H: tobacco and empty destinations do not print kitchen/bar tickets ───');
+  {
+    const tobaccoOnly = routeItemsToStations(db, [{ product_id: 'prod-express-esse-mango' }]);
+    assertEqual(tobaccoOnly.length, 0, 'H: tobacco-only order prints no kitchen/bar ticket');
+
+    const empty = routeItemsToStations(db, []);
+    assertEqual(empty.length, 0, 'H: empty item list produces no ticket groups');
+
+    const foodAndTobacco = routeItemsToStations(db, [
+      { product_id: 'prod-express-pepperoni' },
+      { product_id: 'prod-express-esse-mango' },
+    ]);
+    assertEqual(foodAndTobacco.length, 1, 'H: tobacco is omitted from a mixed food order');
+    assertEqual(foodAndTobacco[0].stationName, 'Kitchen', 'H: remaining food still goes to Kitchen');
+    assertEqual(foodAndTobacco[0].items.length, 1, 'H: only the pizza is on the kitchen ticket');
+    assertEqual(foodAndTobacco[0].items[0].product_id, 'prod-express-pepperoni', 'H: kitchen ticket is the pizza');
+
+    const unmatched = routeItemsToStations(db, [{ product_id: 'prod-food' }]);
+    assertEqual(unmatched.length, 1, 'H: custom/unmapped categories default to Kitchen');
+    assertEqual(unmatched[0].stationName, 'Kitchen', 'H: unmatched fallback label is Kitchen');
+    assertEqual(unmatched[0].items[0].product_id, 'prod-food', 'H: unmatched item is kept on the kitchen ticket');
   }
 
   closeDatabase();

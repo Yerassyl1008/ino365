@@ -18,7 +18,11 @@ import assert from 'node:assert/strict';
 import {
   MAX_RECEIPT_LANGUAGES,
   bilingualLabelLines,
+  decodeCp866,
   defaultPrintLanguagePolicy,
+  encodeCp866,
+  foldUnsupportedCyrillic,
+  isCp866Encodable,
   isLtrIsland,
   labelWidth,
   parseKotLanguagePolicy,
@@ -242,5 +246,16 @@ assert.equal(selectBilingualFit({ primary: 'A', secondary: 'B' }, -5), 'stacked'
 assert.equal(selectBilingualFit({ primary: 'A' }, Number.NaN), 'inline');
 
 console.log('✓ bilingual fit strategies');
+
+console.log('Testing PC866 Cyrillic encoding...');
+{
+  const sample = 'ИТОГО Капучино Ёё';
+  assert.equal(decodeCp866(encodeCp866(sample)), sample);
+  assert.equal(isCp866Encodable(sample), true);
+  assert.equal(isCp866Encodable('Қазақ'), false);
+  assert.equal(foldUnsupportedCyrillic('ЖИЫНТЫҚ'), 'ЖИЫНТЫQ');
+  assert.equal(foldUnsupportedCyrillic('ИТОГО'), 'ИТОГО');
+}
+console.log('✓ PC866 encode/decode and leftover Cyrillic folding');
 
 console.log('\nAll print kernel tests passed.');

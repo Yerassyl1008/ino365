@@ -512,6 +512,40 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
   assert('shaped KOT emits no width warnings', narrowKotWarnings.length === 0);
 }
 
+console.log('\n✅ Test 1b3: Native PC866 Cyrillic stays sharp (not skipped, not romanized)');
+{
+  const warnings: Array<{ field: string; text: string; message: string }> = [];
+  const buf = buildEscPos(['{INIT}', '{CENTER}ИТОГО{/CENTER}', 'Капучино     180.00', 'ЖИЫНТЫҚ', '{CUT}'], false, { language: 'ru' }, warnings);
+  const text = escPosToText(buf);
+  assert('selects PC866 after INIT', bytesContain(buf, [ESC, 0x74, 17]));
+  assert('emits native Cyrillic ИТОГО', text.includes('ИТОГО'));
+  assert('emits native Cyrillic item name', text.includes('Капучино'));
+  assert('does not romanize ИТОГО to ITOGO', !text.includes('ITOGO'));
+  assert('Kazakh extra Қ folds to Q so the line still prints', text.includes('ЖИЫНТЫQ'));
+  assert('Cyrillic lines emit no skip warning', warnings.length === 0);
+
+  const asciiBuf = buildEscPos(['{INIT}', 'TOTAL        100.00', '{CUT}']);
+  assert('ASCII receipts do not switch to PC866', !bytesContain(asciiBuf, [ESC, 0x74, 17]));
+
+  const { warnings: feWarnings, unicode: feUnicode, webPrint } = loadFrontendPrinterModules();
+  const cyrEnc: any = { out: [] as string[], codepages: [] as string[], text(v: string) { this.out.push(v); return this; }, codepage(name: string) { this.codepages.push(name); return this; } };
+  const cyrWarnings: any[] = [];
+  feWarnings.safePrinterText(cyrEnc, 'ИТОГО', cyrWarnings, false, false, undefined, undefined, 'ru');
+  assert('frontend safePrinterText emits Cyrillic', cyrEnc.out[0] === 'ИТОГО' && cyrWarnings.length === 0);
+  assert('frontend selects cp866 for Cyrillic', cyrEnc.codepages.includes('cp866'));
+  assert('frontend keeps ИТОГО instead of ITOGO', feUnicode.foldThermalText('ru', 'ИТОГО') === 'ИТОГО');
+  assert('frontend folds leftover Kazakh letter', feUnicode.foldThermalText('kk', 'ЖИЫНТЫҚ') === 'ЖИЫНТЫQ');
+
+  const html58 = webPrint.generateBillHtml(
+    { id: 1, bill_number: 'B-1', subtotal: 100, tax_amount: 0, discount_amount: 0, total: 100, created_at: new Date().toISOString(), items: [], order: { items: [] } } as any,
+    { business_name: 'Кафе', currency: 'RUB', country: 'RU' } as any,
+    { paperSize: 'thermal58', language: 'ru' },
+  );
+  assert('thermal 58 mm HTML sets @page to 58mm', html58.includes('@page { size: 58mm auto'));
+  assert('thermal HTML uses black high-contrast text', html58.includes('color: #000') && html58.includes('-webkit-font-smoothing: none'));
+  assert('thermal HTML does not use gray body text', !html58.includes('color: #333'));
+}
+
 console.log('\n✅ Test 1c: ESC/POS output can be previewed without a printer');
 {
   const buf = buildEscPos(['{INIT}', '{CENTER}{BOLD}HEADER{/BOLD}{/CENTER}', 'Item       Rs63.00', '{CUT}']);

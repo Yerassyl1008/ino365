@@ -12,7 +12,7 @@ A check means the role is allowed to use the capability. A dash means it is not 
 
 | Area | Capability | Owner | Manager | Cashier | Server | Chef |
 | --- | --- | :---: | :---: | :---: | :---: | :---: |
-| Orders | Use the POS terminal | ✓ | ✓ | ✓ | — | — |
+| Orders | Use the POS terminal | ✓ | ✓ | ✓ | ✓ | — |
 | Reports | View the owner dashboard | ✓ | — | — | — | — |
 | Orders | View and create orders | ✓ | ✓ | ✓ | ✓ | — |
 | Orders | Update order status | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -21,11 +21,12 @@ A check means the role is allowed to use the capability. A dash means it is not 
 | Orders | Void in-progress order items (manager PIN may be required) | ✓ | ✓ | — | — | — |
 | Orders | Restore cancelled order items | ✓ | ✓ | — | — | — |
 | Orders | Create and manage held orders | ✓ | ✓ | ✓ | ✓ | — |
+| Orders | Print kitchen tickets from the POS | ✓ | ✓ | ✓ | ✓ | — |
 | Payments | View bills, take payments, and print receipts | ✓ | ✓ | ✓ | — | — |
 | Payments | Apply bill discounts and mark bills printed | ✓ | ✓ | — | — | — |
 | Payments | View payment methods | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Payments | Manage payment methods | ✓ | ✓ | — | — | — |
-| Payments | Print bills and kitchen tickets | ✓ | ✓ | ✓ | — | — |
+| Payments | Print bills and receipts | ✓ | ✓ | ✓ | — | — |
 | Customers | View, search, and create customers | ✓ | ✓ | ✓ | ✓ | — |
 | Customers | Edit customers | ✓ | ✓ | ✓ | — | — |
 | Customers | Repair customer phone records | ✓ | ✓ | — | — | — |
@@ -62,7 +63,8 @@ A check means the role is allowed to use the capability. A dash means it is not 
 - **Read-only display:** The in-app table does not offer role editing, permission toggles, or IAM configuration. These permissions are currently fixed by role. Role configuration/IAM is not available yet.
 - **Owner and manager visibility:** The matrix is rendered only for an authenticated owner or manager on the Staff page. The API continues to enforce authorization independently; hiding a UI control is not a security boundary.
 - **KDS scope:** Chef access is further narrowed by assigned `category_ids` and kitchen stations. Owner and manager KDS access is unrestricted by category, subject to the KDS being enabled.
-- **Server App:** The standalone Server App is intentionally restricted to `server`, `manager`, and `owner` roles. It is separate from the dashboard navigation.
+- **Cashier POS (one PC):** Waiters, cashiers, managers, and owners sign in with PIN on the same KorgenKassa window. Switch user / Lock till returns to the PIN pad without signing out of Windows. Waiters can take and send orders (including kitchen tickets). Closing the check and taking payment stay with cashier, manager, or owner.
+- **Server App:** The standalone Server App is intentionally restricted to `server`, `manager`, and `owner` roles. It is separate from the dashboard navigation. Waiters can still use it on phones; the cashier monoblock is the POS.
 - **Staff management:** Managers can manage operational staff, but cannot modify or deactivate owner/manager accounts. Only owners can change roles for an existing account, and the last active owner cannot be demoted.
 - **Conditional surfaces:** Business type, feature settings (such as KDS or WhatsApp), and account state can hide or disable a surface without changing the fixed role boundary.
 

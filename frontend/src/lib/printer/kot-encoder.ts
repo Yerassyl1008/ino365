@@ -9,7 +9,7 @@ import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Order } from '@/lib/types';
 import { LANGUAGES, type Language } from '@/lib/i18n/languages';
 import { formatTime } from './format-date';
-import { foldsThermalText, foldThermalText } from './unicode';
+import { foldsThermalText, foldThermalText, selectCyrillicCodepage } from './unicode';
 import { safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
 import { printLabelResolver } from './print-document';
 
@@ -68,6 +68,7 @@ export function buildKotBytes(
 
   // ── KOT Header ───────────────────────────────────────────────────────────────
   enc.initialize();
+  selectCyrillicCodepage(enc, language);
 
   // KOT Banner
   const bannerText = foldThermalText(language, label('print.kot.banner'));

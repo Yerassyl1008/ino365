@@ -5,8 +5,8 @@ import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { normalizeCatalogBusinessType } from '../../shared/catalog-scope';
 import {
-  decodePdfBase64,
-  parseMenuPdf,
+  decodeMenuFileBase64,
+  parseMenuFile,
   MAX_MENU_ITEMS,
   type ParsedMenuItem,
 } from '../services/menu-pdf-parse';
@@ -67,8 +67,9 @@ function pdfErrorResponse(res: Response, error: unknown): Response {
 
 router.post('/parse', requireRole(...ROLE_ACCESS.ownerManager), async (req: Request, res: Response) => {
   try {
-    const buffer = decodePdfBase64((req.body as { pdf_base64?: unknown })?.pdf_base64);
-    const parsed = await parseMenuPdf(buffer, '');
+    const body = (req.body || {}) as { file_base64?: unknown; pdf_base64?: unknown };
+    const buffer = decodeMenuFileBase64(body.file_base64 || body.pdf_base64);
+    const parsed = await parseMenuFile(buffer, '');
     res.json({
       items: parsed.items,
       skipped: parsed.skipped.slice(0, 50),
@@ -76,6 +77,7 @@ router.post('/parse', requireRole(...ROLE_ACCESS.ownerManager), async (req: Requ
       warnings: parsed.warnings,
       pages: parsed.pages,
       text_length: parsed.textLength,
+      ocr: parsed.ocr,
     });
   } catch (error) {
     return pdfErrorResponse(res, error);

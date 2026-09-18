@@ -496,50 +496,59 @@ function paymentLineLabel(label: { conceptId?: string; primary: string }): strin
 }
 
 function getPaperStyles(size: PaperSize): string {
-  const baseStyles = `
+  const mm = size === 'thermal80' ? 80 : 58;
+  const bodySize = size === 'thermal80' ? '13px' : '12px';
+  const h1Size = size === 'thermal80' ? '18px' : '16px';
+  const totalSize = size === 'thermal80' ? '16px' : '15px';
+  return `
+    @page { size: ${mm}mm auto; margin: 0; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, 'Segoe UI', Tahoma, 'Noto Naskh Arabic', 'Helvetica Neue', Arial, sans-serif; font-size: 12px; line-height: 1.4; color: #333; }
-    .bill-container { max-width: 100%; margin: 0 auto; }
-    .reprint-banner { text-align: center; font-size: 22px; font-weight: bold; letter-spacing: 2px; color: #c00; border: 3px solid #c00; padding: 6px; margin-bottom: 15px; }
-    .online-order-banner { text-align: center; font-size: 18px; font-weight: bold; letter-spacing: 1px; border: 2px solid #333; padding: 6px; margin-bottom: 15px; }
-    .online-order-banner .online-order-detail { font-size: 13px; font-weight: normal; letter-spacing: normal; margin-top: 2px; }
-    .header { text-align: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #ccc; }
-    .header h1 { font-size: 24px; margin-bottom: 5px; }
-    .bill-details { margin-bottom: 15px; }
+    html, body {
+      width: ${mm}mm;
+      max-width: ${mm}mm;
+      margin: 0;
+      padding: 0;
+      color: #000;
+      background: #fff;
+      font-family: 'Courier New', Courier, 'Lucida Console', monospace;
+      font-size: ${bodySize};
+      line-height: 1.25;
+      font-weight: 700;
+      -webkit-font-smoothing: none;
+      -moz-osx-font-smoothing: unset;
+      font-smooth: never;
+      font-kerning: none;
+    }
+    .bill-container { width: 100%; max-width: ${mm}mm; margin: 0; padding: 2mm; color: #000; }
+    .reprint-banner { text-align: center; font-size: 18px; font-weight: 800; letter-spacing: 1px; color: #000; border: 3px solid #000; padding: 4px; margin-bottom: 8px; }
+    .online-order-banner { text-align: center; font-size: 16px; font-weight: 800; letter-spacing: 0; border: 2px solid #000; padding: 4px; margin-bottom: 8px; }
+    .online-order-banner .online-order-detail { font-size: ${bodySize}; font-weight: 700; letter-spacing: normal; margin-top: 2px; }
+    .header { text-align: center; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #000; }
+    .header h1 { font-size: ${h1Size}; margin-bottom: 4px; font-weight: 800; color: #000; }
+    .bill-details { margin-bottom: 8px; }
     .bill-details table { width: 100%; }
-    .items-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-    .items-table th, .items-table td { padding: 8px; border-bottom: 1px solid #eee; text-align: start; }
-    .items-table th { background: #f5f5f5; font-weight: bold; }
-    .tax-table, .payments-table { width: 50%; margin-inline-start: 50%; border-collapse: collapse; margin-bottom: 15px; }
-    .tax-table th, .tax-table td, .payments-table th, .payments-table td { padding: 6px 8px; }
-    .tax-table th, .payments-table th { background: #f9f9f9; text-align: start; }
-    .totals-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-    .totals-table td { padding: 6px 8px; }
-    .total-row { border-top: 2px solid #333; font-size: 16px; }
-    .footer { text-align: center; margin-top: 30px; padding-top: 15px; border-top: 1px solid #ccc; }
-    .powered-by { font-size: 10px; margin-top: 8px; color: #555; }
+    .items-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+    .items-table th, .items-table td { padding: 3px 2px; border-bottom: 1px solid #000; text-align: start; color: #000; }
+    .items-table th { font-weight: 800; }
+    .tax-table, .payments-table { width: 50%; margin-inline-start: 50%; border-collapse: collapse; margin-bottom: 8px; }
+    .tax-table th, .tax-table td, .payments-table th, .payments-table td { padding: 3px 2px; color: #000; }
+    .tax-table th, .payments-table th { text-align: start; font-weight: 800; }
+    .totals-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+    .totals-table td { padding: 3px 2px; color: #000; }
+    .total-row { border-top: 2px solid #000; font-size: ${totalSize}; }
+    .footer { text-align: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid #000; }
+    .powered-by { font-size: 11px; margin-top: 6px; color: #000; font-weight: 700; }
     .text-end { text-align: end !important; }
     .num { unicode-bidi: isolate; white-space: nowrap; }
     .ltr { direction: ltr; unicode-bidi: isolate; }
-    .text-muted { color: #666; }
-    .text-italic { font-style: italic; color: #888; }
+    .text-muted, .text-italic { color: #000; font-weight: 700; }
+    .text-italic { font-style: italic; }
+    @media print {
+      .no-print { display: none !important; }
+      html, body { width: ${mm}mm !important; max-width: ${mm}mm !important; }
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; color: #000; background: #fff; }
+    }
   `;
-
-  switch (size) {
-    case 'thermal58':
-      return baseStyles + `
-        .bill-container { padding: 5px; max-width: 58mm; font-size: 10px; }
-        .header h1 { font-size: 14px; }
-        .items-table th, .items-table td, .tax-table td, .totals-table td, .payments-table td { padding: 2px 4px; }
-      `;
-    case 'thermal80':
-      return baseStyles + `
-        .bill-container { padding: 10px; max-width: 80mm; font-size: 11px; }
-        .header h1 { font-size: 16px; }
-      `;
-    default:
-      return baseStyles;
-  }
 }
 
 /**

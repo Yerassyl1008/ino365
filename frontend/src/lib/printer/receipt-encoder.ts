@@ -27,7 +27,7 @@
 
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Bill, Tenant } from '@/lib/types';
-import { foldThermalText, normalizeCurrencyToAscii, padCurrencyPrefix } from './unicode';
+import { foldThermalText, normalizeCurrencyToAscii, padCurrencyPrefix, selectCyrillicCodepage } from './unicode';
 import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
@@ -432,6 +432,7 @@ export function buildClassicReceiptBytes(
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
   enc.initialize();
+  selectCyrillicCodepage(enc, primaryLang);
   if (messages?.reprintBanner) printReprintBanner(enc, labelOf(messages.reprintBanner), warnings, arabicShaping, cols, primaryLang);
   if (messages?.onlineOrderBanner) {
     printOnlineOrderBanner(
@@ -635,6 +636,7 @@ export function buildCompactReceiptBytes(
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
   enc.initialize();
+  selectCyrillicCodepage(enc, primaryLang);
   if (messages?.reprintBanner) printReprintBanner(enc, labelOf(messages.reprintBanner), warnings, arabicShaping, cols, primaryLang);
   if (messages?.onlineOrderBanner) {
     printOnlineOrderBanner(
@@ -806,6 +808,7 @@ export function buildDetailedReceiptBytes(
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
   enc.initialize();
+  selectCyrillicCodepage(enc, primaryLang);
   if (isReprint) printReprintBanner(enc, 'REPRINT', warnings, arabicShaping, cols, primaryLang);
 
   // Header

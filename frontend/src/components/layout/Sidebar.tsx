@@ -13,6 +13,7 @@ import {
   UserCog,
   Settings,
   LogOut,
+  Lock,
   ChefHat,
   UserCircle,
   MessageCircle,
@@ -41,6 +42,7 @@ import toast from 'react-hot-toast';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { LANGUAGES, type Language } from '@/lib/i18n';
 import { useAuthStore } from '@/store/auth';
+import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useWorkspaceTabs } from '@/store/workspace-tabs';
 import { getLandingPage } from '@/components/layout/AuthGuard';
@@ -137,6 +139,7 @@ export default function AppSidebar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user, currentTenant, logout } = useAuthStore();
+  const clearCart = useCartStore((s) => s.clearCart);
   const { tablesRequired, kdsEnabled, whatsappEnabled, setTablesRequired, setKdsEnabled, setWhatsappEnabled, language, setLanguage } = usePosSettingsStore();
   const { isMobile, setOpenMobile, state } = useSidebar();
   const { recentHrefs, openTab } = useWorkspaceTabs();
@@ -460,7 +463,22 @@ export default function AppSidebar() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={async () => {
-                    if (await confirm(t('confirmLogout'))) logout();
+                    if (await confirm(t('confirmSwitchUser'))) {
+                      clearCart();
+                      logout();
+                    }
+                  }}
+                  className="cursor-pointer flex items-center gap-2"
+                >
+                  <Lock className="size-4 shrink-0" />
+                  <span>{t('switchUser')}</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={async () => {
+                    if (await confirm(t('confirmLogout'))) {
+                      clearCart();
+                      logout();
+                    }
                   }}
                   className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/50 flex items-center gap-2"
                 >

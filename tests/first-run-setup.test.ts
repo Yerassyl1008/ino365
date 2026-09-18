@@ -212,14 +212,22 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(setting('telemetry_scope'), 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics');
     assert.equal(setting('diagnostics_consent'), 'true', 'store diagnostics are on by default for a new install');
     assert.equal(profileRefreshes, 1, 'setup immediately refreshes the completed store profile in FloAdmin');
-    assert.equal(count('categories'), 2, 'express setup seeds minimal categories');
-    assert.equal(count('products'), 4, 'express setup seeds minimal products');
+    assert.equal(count('categories'), 14, 'express setup seeds the cafe menu categories');
+    assert.equal(count('products'), 97, 'express setup seeds the full cafe menu');
+    const shashlik = getDatabase().prepare("SELECT id FROM categories WHERE name = 'Шашлык' AND deleted_at IS NULL").get() as { id: string } | undefined;
+    assert.ok(shashlik, 'express cafe catalog includes Шашлык as a real kitchen category');
+    const lapsha = getDatabase().prepare("SELECT price, description FROM products WHERE name = 'Домашняя лапша' AND deleted_at IS NULL").get() as { price: number; description: string } | undefined;
+    assert.equal(lapsha?.price, 1590, 'express cafe catalog keeps Домашняя лапша price');
+    assert.equal(lapsha?.description, 'лапша, картофель, морковь, курица', 'express cafe catalog stores composition as description');
     const cafeScopes = getDatabase().prepare(
       "SELECT DISTINCT business_scope AS scope FROM categories WHERE deleted_at IS NULL"
     ).all() as Array<{ scope: string }>;
     assert.ok(cafeScopes.every((row) => row.scope === 'restaurant'), 'express cafe categories are cafe-scoped');
     assert.equal(count('tables'), 0, 'qsr express setup does not seed dine-in tables');
     assert.equal(count('customers'), 0, 'express setup does not seed demo customers');
+    assert.equal(count('kitchen_stations'), 2, 'express cafe setup seeds kitchen and bar stations');
+    const cafeStations = getDatabase().prepare('SELECT id, name FROM kitchen_stations ORDER BY sort_order, name').all() as Array<{ id: string; name: string }>;
+    assert.deepEqual(cafeStations.map((station) => station.id).sort(), ['stn-express-bar', 'stn-express-kitchen']);
     console.log('   ✓ setup endpoint creates owner and applies express QSR setup');
 
     // Setup initialize should be disabled since a user already exists
@@ -374,6 +382,7 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(setting('server_app_enabled'), 'false', 'shop setup disables the waiter app');
     assert.equal(setting('kot_printing_enabled'), 'false', 'shop setup disables kitchen tickets');
     assert.equal(count('tables'), 0, 'shop setup never seeds dine-in tables');
+    assert.equal(count('kitchen_stations'), 0, 'shop setup does not seed kitchen or bar stations');
     assert.equal(count('categories'), 3, 'express shop setup seeds grocery, drinks, and household');
     assert.equal(count('products'), 5, 'express shop setup seeds barcode products');
     const tracked = getDatabase().prepare(

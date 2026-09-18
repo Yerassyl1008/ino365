@@ -112,10 +112,13 @@ async function main() {
       403,
       'server remains forbidden from POST /api/printers/print-bill',
     );
+    const waiterKotRes = await request(app).post('/api/printers/print-kot').set(waiterAuth).send({ orderId: 999999 });
+    assertEqual(waiterKotRes.status, 400, 'server reaches POST /api/printers/print-kot from POS');
+    assertEqual(waiterKotRes.body.error, 'No default printer configured. Add a printer in Settings.', 'waiter print-kot fails at printer validation, not role gating');
     assertEqual(
-      (await request(app).post('/api/printers/print-kot').set(waiterAuth).send({ orderId: 999999 })).status,
+      (await request(app).post('/api/printers/print-kot').set(chefAuth).send({ orderId: 999999 })).status,
       403,
-      'server remains forbidden from POST /api/printers/print-kot',
+      'chef remains forbidden from POS kitchen-ticket printing',
     );
     assertEqual(
       (await request(app).post('/api/printers/print-bill').send({ billId: 999999 })).status,

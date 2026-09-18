@@ -20,6 +20,14 @@ import { fitTemplateLabel, resolveTemplateLabel, sanitizeTemplateLabelText } fro
 import { renderClassicReceiptViaDocument } from './document-classic';
 import { renderCompactReceiptViaDocument } from './document-compact';
 import { renderKotViaDocument } from './document-kot';
+import {
+  containsCp866Cyrillic,
+  decodeCp866,
+  encodeCp866,
+  escPosSelectCp866,
+  foldUnsupportedCyrillic,
+  isCp866Encodable,
+} from '../../shared/print/cp866';
 
 export type PrintResult = {
   ok: boolean;
@@ -1500,40 +1508,24 @@ const CURRENCY_ASCII_MAP: Record<string, string> = {
 };
 
 /**
- * Romanization table for Russian and Kazakh Cyrillic (BGN/PCGN-style, ASCII
- * only). Generic ESC/POS font ROMs carry no Cyrillic glyphs and buildEscPos
- * skips lines it cannot render, so without folding, Cyrillic item names and
- * totals would silently vanish from the receipt. Soft and hard signs carry
- * no sound and are dropped rather than mapped to quotes, which would
- * collide with ESC/POS text.
+ * Keep PC866 glyphs (native Cyrillic on CIS-market ESC/POS printers) and
+ * romanize only letters the font ROM cannot draw (Kazakh extras, etc.).
+ * Previously the whole alphabet was folded to ASCII, which made Russian
+ * receipts unreadable and pushed merchants onto the blurry HTML print path.
  */
-const CYRILLIC_THERMAL_ASCII_MAP: Record<string, string> = {
-  'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'Yo', 'Ж': 'Zh',
-  'З': 'Z', 'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M', 'Н': 'N', 'О': 'O',
-  'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U', 'Ф': 'F', 'Х': 'Kh', 'Ц': 'Ts',
-  'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch', 'Ъ': '', 'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu',
-  'Я': 'Ya',
-  'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo', 'ж': 'zh',
-  'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o',
-  'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'kh', 'ц': 'ts',
-  'ч': 'ch', 'ш': 'sh', 'щ': 'shch', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu',
-  'я': 'ya',
-  // Kazakh-specific letters.
-  'Ә': 'A', 'Ғ': 'G', 'Қ': 'Q', 'Ң': 'Ng', 'Ө': 'O', 'Ұ': 'U', 'Ү': 'U', 'Һ': 'H', 'І': 'I',
-  'ә': 'a', 'ғ': 'g', 'қ': 'q', 'ң': 'ng', 'ө': 'o', 'ұ': 'u', 'ү': 'u', 'һ': 'h', 'і': 'i',
-};
-
 export function normalizeCyrillicThermalText(text: string): string {
-  return text.replace(/[\u0400-\u04FF]/g, (character) => CYRILLIC_THERMAL_ASCII_MAP[character] ?? character);
+  return foldUnsupportedCyrillic(text);
 }
 
 /**
- * Folds a receipt line to characters a generic thermal printer can render,
- * based on the print language. A no-op for languages whose script the
- * printer already handles.
+ * Folds a receipt line to characters a generic thermal printer can render.
+ * Russian/Kazakh keep PC866 Cyrillic; other languages pass through unless
+ * the line itself contains leftover non-PC866 Cyrillic (mixed catalogs).
  */
 export function foldThermalText(language: string | undefined, text: string): string {
-  return language === 'ru' || language === 'kk' ? normalizeCyrillicThermalText(text) : text;
+  return language === 'ru' || language === 'kk' || /[\u0400-\u04FF]/.test(text)
+    ? normalizeCyrillicThermalText(text)
+    : text;
 }
 
 // Resolves the currency symbol into the exact text that will be printed,
@@ -1581,8 +1573,18 @@ export function appendCashDrawerPulse(data: Buffer): Buffer {
   return Buffer.concat([data, Buffer.from([0x1B, 0x70, 0x00, 0x19, 0xFA])]);
 }
 
+function printableEscPosText(line: string): string {
+  return line.replace(/\{[A-Z_/]+\}/g, '');
+}
+
+function encodeEscPosText(line: string): number[] {
+  return isCp866Encodable(line) ? encodeCp866(line) : [...Buffer.from(line, 'utf8')];
+}
+
 export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number; language?: string } = {}, warnings?: PrintWarning[]): Buffer {
   const buf: number[] = [];
+  const needsCp866 = options.language === 'ru' || options.language === 'kk'
+    || lines.some((line) => containsCp866Cyrillic(printableEscPosText(line)));
 
   const resetAllStyles = () => {
     buf.push(0x1B, 0x45, 0x00);
@@ -1590,10 +1592,19 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     buf.push(0x1B, 0x61, 0x00);
   };
 
+  const selectCp866 = () => {
+    buf.push(...escPosSelectCp866());
+  };
+
+  if (needsCp866 && !lines.some((line) => line.includes('{INIT}'))) {
+    selectCp866();
+  }
+
   for (let line of lines) {
     if (line.includes('{INIT}')) {
       buf.push(0x1B, 0x40);
       resetAllStyles();
+      if (needsCp866) selectCp866();
       continue;
     }
 
@@ -1612,6 +1623,8 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       continue;
     }
 
+    line = foldThermalText(options.language, line);
+
     const isStoreName = line.includes('{STORE_NAME}');
     line = line.replace(/\{STORE_NAME\}/g, '');
     let printableLine = line.replace(/\{[A-Z_/]+\}/g, '');
@@ -1621,16 +1634,19 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     const lineFontB = line.includes('{FONT_B}');
     const center = line.startsWith('{CENTER}') && line.includes('{/CENTER}');
     const textWithoutSupportedCurrency = printableLine.replace(/[₹₨€£¥₩₺₫₪₽฿₱₴₦₵₡₲]/g, '');
-    if (/[^\x00-\x7F]/.test(textWithoutSupportedCurrency)) {
+    const textWithoutNativeScripts = textWithoutSupportedCurrency.replace(/[А-яЁё]/g, '');
+    if (/[^\x00-\x7F]/.test(textWithoutNativeScripts)) {
       // Allow Arabic/Persian script through only when the printer profile
       // explicitly declares Arabic shaping support AND the line contains no
-      // other non-ASCII script. Otherwise skip it — never emit unshaped text.
+      // other non-ASCII script. PC866 Cyrillic is native text and is not
+      // skipped. Otherwise skip it — never emit unshaped text.
       const arabicOnly = options.arabicShaping === true
         && hasArabicScript(printableLine)
         && !/[^\x00-\x7F]/.test(
           textWithoutSupportedCurrency
             .replace(ARABIC_SCRIPT_GLOBAL_RE, '')
             .replace(ARABIC_SHAPING_ALLOWED_GLOBAL_RE, '')
+            .replace(/[А-яЁё]/g, '')
         );
       if (!arabicOnly) {
         if (warnings) {
@@ -1673,7 +1689,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       buf.push(0x1B, 0x45, 0x01);
     }
 
-    buf.push(...Buffer.from(line, 'utf8'));
+    buf.push(...encodeEscPosText(line));
     buf.push(0x0A);
   }
 
@@ -1691,7 +1707,7 @@ export function escPosToText(data: Buffer | Uint8Array): string {
       const command = bytes[i + 1];
       if (command === 0x40) {
         i += 2;
-      } else if (command === 0x21 || command === 0x45 || command === 0x61) {
+      } else if (command === 0x21 || command === 0x45 || command === 0x61 || command === 0x74) {
         i += 3;
       } else if (command === 0x64) {
         const feedLines = bytes[i + 2] || 0;
@@ -1715,7 +1731,7 @@ export function escPosToText(data: Buffer | Uint8Array): string {
     i += 1;
   }
 
-  return Buffer.from(text).toString('utf8').replace(/\n+$/, '');
+  return decodeCp866(text).replace(/\n+$/, '');
 }
 
 export async function printViaNetwork(ip: string, port: number, data: Buffer, signal?: AbortSignal): Promise<DispatchResult> {

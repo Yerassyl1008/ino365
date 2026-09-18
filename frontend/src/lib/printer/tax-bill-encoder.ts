@@ -15,7 +15,7 @@
 
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Bill, Tenant } from '@/lib/types';
-import { foldThermalText, normalizeCurrencyToAscii, padCurrencyPrefix } from './unicode';
+import { foldThermalText, normalizeCurrencyToAscii, padCurrencyPrefix, selectCyrillicCodepage } from './unicode';
 import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
@@ -170,6 +170,7 @@ export function buildTaxBillBytes(
 
   // ── Header ────────────────────────────────────────────────────────────────
   enc.initialize().align('center');
+  selectCyrillicCodepage(enc, language);
   if (showBusinessName && tenant.business_name) {
     enc.bold(true).width(2).height(2);
     safePrinterText(enc, truncate(tenant.business_name, 16), warnings, true, arabicShaping, Math.floor(cols / 2), undefined, language);

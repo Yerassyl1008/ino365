@@ -447,7 +447,8 @@ router.post('/login', authRateLimit(), asyncHandler(async (req: Request, res: Re
 
 // ── POST /api/auth/pin-login ──────────────────────────────────────────────────
 // Staff sign in with a short PIN. A matching PIN among PIN_LOGIN_ROLES
-// authenticates that user; cashier/server/owner/manager also open a shift.
+// authenticates that user on this till (waiter, cashier, manager, owner, chef).
+// Cashier/server/owner/manager also open a shift. Chefs land on KDS, not POS.
 
 router.post('/pin-login', authRateLimit(), asyncHandler(async (req: Request, res: Response) => {
   try {

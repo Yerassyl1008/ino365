@@ -731,6 +731,14 @@ export function isKotPrintingEnabled(): boolean {
   return getSettingValue('kot_printing_enabled') !== 'false';
 }
 
+/**
+ * Automatic KOT on order create/append. Defaults on so cafe tills print
+ * kitchen and bar tickets without hunting Settings. Retail setup turns it off.
+ */
+export function isAutoPrintKotEnabled(): boolean {
+  return getSettingValue('auto_print_kot') !== 'false';
+}
+
 export function upsertTelemetryLastPing(): void {
   upsertSetting('telemetry_last_ping_at', now());
 }
@@ -4293,6 +4301,22 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       db.prepare(`INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('service_charge_dine_in_only', 'true', ?)`).run(stamp);
     },
   },
+  {
+    version: 83,
+    name: 'auto_print_kot_and_cafe_stations',
+    up: () => {
+      const isRetail = getSettingValue('business_type') === 'retail';
+      insertSettingIfMissing('auto_print_kot', isRetail ? 'false' : 'true');
+      if (!isRetail) {
+        try {
+          const { ensureCafeKitchenStations } = require('./services/catalog-templates');
+          ensureCafeKitchenStations(db, getSettingValue('language') || undefined);
+        } catch (error) {
+          console.warn('[DB] Cafe kitchen/bar station seed skipped:', error);
+        }
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -5096,6 +5120,7 @@ function seedInstallDefaults(): void {
   insert('kds_enabled', 'true');
   insert('server_app_enabled', 'true');
   insert('kot_printing_enabled', 'true');
+  insert('auto_print_kot', 'true');
   insert('printer_trim_decimals', 'false');
   insert('bill_template', 'classic');
   insert('bill_footer_message', '');

@@ -11,7 +11,8 @@ declare module '@point-of-sale/receipt-printer-encoder' {
     width(n: 1 | 2): this;
     height(n: 1 | 2): this;
     size(size: 'normal' | 'small'): this;
-    text(text: string): this;
+  codepage(name: string): this;
+  text(text: string): this;
     newline(): this;
     cut(): this;
     rule(options?: { style: 'single' | 'double' }): this;

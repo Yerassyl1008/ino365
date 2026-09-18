@@ -159,7 +159,7 @@ function run(): void {
     const text80 = buf80.toString('utf8');
     assert('en test page title unchanged', text80.includes('Flo Printer Test'));
     assert('en test page reports columns', text80.includes('Columns: 48'));
-    const ruText = buildTestPage('80mm', 'full', 'ru').toString('utf8');
+    const ruText = escPosToText(buildTestPage('80mm', 'full', 'ru'));
     assert('ru test page title folded for thermal output', ruText.includes(foldThermalText('ru', printLabel('ru', 'print.test.title'))));
     assert('ru test page columns label folded', ruText.includes(foldThermalText('ru', printLabel('ru', 'print.test.columns'))));
     assert('technical ruler literal stays verbatim', /[1234567890]/.test(ruText));

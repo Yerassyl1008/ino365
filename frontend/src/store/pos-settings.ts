@@ -118,7 +118,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       printerPaperSize: 'thermal58',
       printerEnabled: false,
       printerPrintMode: 'escpos',
-      autoPrintKot: false,
+      autoPrintKot: true,
       autoPrintBill: false,
       whatsappShareEnabled: true,
       // Web print defaults
@@ -210,7 +210,10 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       // frontend/src/lib/i18n/languages.ts. A browser still holding a
       // removed language would keep a key nothing resolves, so it falls
       // back to English.
-      version: 4,
+      // v5: cafe KOT auto-print defaults on so kitchen/bar tickets print
+      // from the till (including waiter-phone orders) without hunting the
+      // Settings checkbox. Existing localStorage false is treated as unset.
+      version: 5,
       migrate: (persisted, version) => {
         const state = persisted as Record<string, unknown>;
         if (version < 1) {
@@ -239,6 +242,9 @@ export const usePosSettingsStore = create<PosSettingsState>()(
         }
         if (version < 4 && !isLanguage(state.language)) {
           state.language = 'en';
+        }
+        if (version < 5) {
+          state.autoPrintKot = true;
         }
         return state as unknown as PosSettingsState;
       },

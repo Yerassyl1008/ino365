@@ -546,7 +546,7 @@ function run(): void {
     for (const template of ['classic', 'compact'] as const) {
       const label = `${template}/${language}`;
       const warnings: Warnings = [];
-      // Cyrillic is folded to ASCII for generic ESC/POS firmware.
+      // Cyrillic prints as native PC866 text (not ASCII romanization).
       const text = escPosToText(
         formatReceipt(order, bill, business, template, 42, false, false, 'full', warnings, false, language),
       );

@@ -1,13 +1,11 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled, parseItemJson } from '../db';
+import { getDatabase, now, isKotPrintingEnabled } from '../db';
 import { getOrderWithItems } from './bills';
 import { v4 as uuidv4 } from 'uuid';
-import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, detectConnectedPrinters, prepareReceipt, escPosToText } from '../printers/thermal';
-import { BILL_LANGUAGE_POLICY_KEY, KOT_LANGUAGE_POLICY_KEY, parseStoredLanguagePolicy } from '../lib/print-language-settings';
+import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, detectConnectedPrinters, prepareReceipt, escPosToText } from '../printers/thermal';
+import { BILL_LANGUAGE_POLICY_KEY, parseStoredLanguagePolicy } from '../lib/print-language-settings';
 import {
-  resolveKotLanguage,
   resolveReceiptLanguages,
-  type KotLanguagePolicy,
   type ReceiptLanguagePolicy,
 } from '../../shared/print';
 import { getSupportedPrinterProfiles, resolvePrinterProfile } from '../printers/profiles';
@@ -16,6 +14,9 @@ import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getCountryByCode, getCurrencySymbol } from '../countries';
 import { asyncHandler } from '../middleware/async-handler';
 import { getHttpRequestSignal } from '../shutdown';
+import { getEffectiveOrderItems, printKotTickets, routeItemsToStations } from '../services/kot-print';
+
+export { getEffectiveOrderItems, routeItemsToStations };
 
 const router = Router();
 
@@ -87,16 +88,6 @@ function printerShape(printer: any) {
     profile_id: profile.id,
     profile_name: `${profile.make} ${profile.model}`,
   };
-}
-
-// Keep receipt and KOT callers on one item hydration contract. Database rows
-// may still contain legacy JSON fields, while selected add-ons now live in the
-// normalized order_item_addons table.
-export function getEffectiveOrderItems(db: any, orderId: string): any[] {
-  return attachEffectiveAddons(
-    db,
-    (db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId) as any[]).map(parseItemJson),
-  );
 }
 
 // GET /api/printers — list all
@@ -502,62 +493,8 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyn
   }
 }));
 
-// Groups order items across active, fully-configured kitchen stations (has both
-// a category allowlist and a linked printer). Items whose category isn't claimed
-// by any station fall back to the default printer under the generic 'Kitchen'
-// label — this is also what happens for the whole order when no station is
-// configured at all, so stores not using stations see no behavior change.
-export function routeItemsToStations(db: any, orderItems: any[]): { stationName: string; printer: any; items: any[] }[] {
-  const rawStations = db.prepare(
-    `SELECT * FROM kitchen_stations WHERE is_active = 1 AND printer_id IS NOT NULL AND category_ids IS NOT NULL AND category_ids != ''`
-  ).all() as any[];
-
-  const stations = rawStations
-    .map((s) => {
-      let categoryIds: string[] = [];
-      try {
-        categoryIds = JSON.parse(s.category_ids) || [];
-      } catch {
-        categoryIds = [];
-      }
-      const printer = db.prepare(
-        `SELECT * FROM printers
-         WHERE id = ? AND connection_type != 'webusb'`,
-      ).get(s.printer_id);
-      return { ...s, categoryIds, printer };
-    })
-    .filter((s) => s.categoryIds.length > 0 && s.printer);
-
-  if (stations.length === 0) {
-    return [{ stationName: 'Kitchen', printer: null, items: orderItems }];
-  }
-
-  const groups = new Map<string, { stationName: string; printer: any; items: any[] }>();
-  const unrouted: any[] = [];
-
-  for (const item of orderItems) {
-    const product: any = item.product_id ? db.prepare('SELECT category_id FROM products WHERE id = ?').get(item.product_id) : null;
-    const categoryId = product?.category_id;
-    const matched = categoryId ? stations.find((s) => s.categoryIds.includes(categoryId)) : undefined;
-    if (matched) {
-      if (!groups.has(matched.id)) {
-        groups.set(matched.id, { stationName: matched.name, printer: matched.printer, items: [] });
-      }
-      groups.get(matched.id)!.items.push(item);
-    } else {
-      unrouted.push(item);
-    }
-  }
-
-  const result = Array.from(groups.values());
-  if (unrouted.length > 0) {
-    result.push({ stationName: 'Kitchen', printer: null, items: unrouted });
-  }
-  return result;
-}
-
 // POST /api/printers/print-kot — print KOT via backend (desktop app)
-router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyncHandler(async (req: Request, res: Response) => {
+router.post('/print-kot', requireRole(...ROLE_ACCESS.sales), asyncHandler(async (req: Request, res: Response) => {
   // Coarser than auto_print_kot — when this is off, no KOT print command
   // should ever be sent, automatic or manual (issue #133).
   if (!isKotPrintingEnabled()) {
@@ -565,8 +502,6 @@ router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), async
   }
   try {
     const { orderId, stationName, items, useUnicode = false } = req.body;
-    // Renderer's global "Arabic/Persian shaping" setting (#437). Only an
-    // explicit boolean overrides the printer profile's declared capability.
     const arabicShapingOverride = typeof req.body?.arabicShaping === 'boolean' ? req.body.arabicShaping : undefined;
 
     if (!orderId) {
@@ -585,54 +520,30 @@ router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), async
       return res.status(400).json({ error: 'No default printer configured. Add a printer in Settings.' });
     }
 
-    const order: any = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
-    if (!order) {
+    const printed = await printKotTickets({
+      orderId,
+      items: Array.isArray(items) ? items : undefined,
+      stationName,
+      useUnicode,
+      arabicShaping: arabicShapingOverride,
+      signal: getHttpRequestSignal(req),
+    });
+
+    if (printed.reason === 'order_not_found') {
       return res.status(404).json({ error: 'Order not found' });
     }
-
-    const kotLanguage = resolveTenantKotLanguage(db);
-
-    // Fetch order items from database
-    const orderItems: any[] = getEffectiveOrderItems(db, orderId);
-
-    // Fetch table info if available
-    if (order.table_id) {
-      const table: any = db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id);
-      if (table) {
-        order.table = { name: table.number };
-      }
+    if (printed.ok) {
+      return res.json({ success: true, warnings: printed.warnings });
     }
-
-    // A stationName override prints one ticket. Item overrides without an
-    // explicit station are still routed, which lets running-order append
-    // tickets contain only the newly added rows while preserving station
-    // routing.
-    let success = true;
-    const warnings: NonNullable<Awaited<ReturnType<typeof printKOTDetailed>>['warnings']> = [];
-    let failure: Awaited<ReturnType<typeof printKOTDetailed>> | null = null;
-    const kotSourceItems = Array.isArray(items) ? items : orderItems;
-    if (stationName) {
-      const kotItems = items || orderItems;
-      const station = stationName || 'Kitchen';
-      const result = await printKOTDetailed(order, kotItems, station, useUnicode, undefined, getHttpRequestSignal(req), arabicShapingOverride, kotLanguage);
-      success = result.ok;
-      failure = result.ok ? null : result;
-      warnings.push(...(result.warnings || []));
-    } else {
-      const groups = routeItemsToStations(db, kotSourceItems).filter((g) => g.items.length > 0);
-      for (const group of groups) {
-        const result = await printKOTDetailed(order, group.items, group.stationName, useUnicode, group.printer || undefined, getHttpRequestSignal(req), arabicShapingOverride, kotLanguage);
-        success = success && result.ok;
-        warnings.push(...(result.warnings || []));
-        if (!result.ok && !failure) failure = result;
-      }
-    }
-
-    if (success) {
-      res.json({ success: true, warnings });
-    } else {
-      res.status(502).json({ error: failure?.detail || 'KOT print failed. Check printer connection.', detail: failure?.detail, failure_class: failure?.failureClass, code: failure?.code, correlation_id: failure?.correlationId, stage: failure?.stage });
-    }
+    const failure = printed.failure;
+    res.status(502).json({
+      error: failure?.detail || 'KOT print failed. Check printer connection.',
+      detail: failure?.detail,
+      failure_class: failure?.failureClass,
+      code: failure?.code,
+      correlation_id: failure?.correlationId,
+      stage: failure?.stage,
+    });
   } catch (error: any) {
     console.error('[Print KOT] Error:', error);
     console.error("[API] Internal error:", error);
@@ -679,16 +590,4 @@ function resolveTenantReceiptLanguages(db: ReturnType<typeof getDatabase>): { pr
   return languages.length > 1
     ? { primary: languages[0], additional: languages[1] }
     : { primary: languages[0] };
-}
-
-/**
- * Kitchen ticket label language (#443): `kot_language_policy` resolved
- * through the kernel, independently of the receipt language policy.
- */
-function resolveTenantKotLanguage(db: ReturnType<typeof getDatabase>): string {
-  const policy = parseStoredLanguagePolicy(
-    KOT_LANGUAGE_POLICY_KEY,
-    tenantSettingValue(db, KOT_LANGUAGE_POLICY_KEY),
-  ) as KotLanguagePolicy;
-  return resolveKotLanguage(policy, tenantLanguage(db));
 }

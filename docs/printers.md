@@ -12,7 +12,7 @@ FloCafe prints receipts and kitchen order tickets from the desktop app. Configur
 | USB / OS Queue | Direct USB printers and OS-managed printer queues | Direct USB connection or a configured OS print queue (Windows Spooler or CUPS) |
 | WebUSB | A browser-connected printer | A compatible browser and a user-selected device; the browser sends the print bytes |
 
-Set the paper width to match the printer: 58 mm or 80 mm. The first configured printer becomes the default; choose another default in Settings when a different printer should receive ordinary receipts. If no hardware printer is configured, FloCafe automatically falls back to system print when printing bills.
+Set the paper width to match the printer: 58 mm or 80 mm. A mismatch (especially printing an 80 mm layout on 58 mm paper, or letting Windows “fit to page”) is the usual cause of blurry, tiny receipts. The first configured printer becomes the default; choose another default in Settings when a different printer should receive ordinary receipts. If no hardware printer is configured, FloCafe automatically falls back to system print when printing bills.
 
 Enable **Open cash drawer on checkout** on a receipt printer only when a till is connected to that printer's drawer-kick port. When enabled, FloCafe appends the standard ESC/POS drawer pulse to printed receipt jobs for that printer.
 
@@ -24,7 +24,7 @@ In **Settings → Printers**, enable **Printer supports Arabic/Persian shaping**
 
 On policy-aware paths, receipt labels (invoice title, bill number, date, totals, payment methods) and kitchen-ticket labels are resolved from the tenant's language configuration at print time:
 
-- **Receipts** on the document-driven thermal path follow the tenant **language** setting combined with the stored `bill_language_policy` (`inherit` follows the store language; `fixed` pins one configured language; an optional second `additional` language is carried on the document for future bilingual layouts). Non-English tenants receive catalog-resolved labels only where the selected printer profile can represent the text: the default ESC/POS paths skip any non-ASCII line with an explicit unsupported-character warning instead of emitting garbled bytes. Russian and Kazakh labels are Cyrillic and therefore non-ASCII, and the only exemption from that guard is the Arabic/Persian shaping passthrough described above — there is no equivalent Cyrillic capability flag — so use browser or system printing when Cyrillic receipt text must reach the paper. Browser receipt printing uses the active UI language rather than a fixed receipt policy and renders every script; see [printing-architecture.md](printing-architecture.md#4-language-behavior).
+- **Receipts** on the document-driven thermal path follow the tenant **language** setting combined with the stored `bill_language_policy` (`inherit` follows the store language; `fixed` pins one configured language; an optional second `additional` language is carried on the document for future bilingual layouts). Non-English tenants receive catalog-resolved labels only where the selected printer profile can represent the text: the default ESC/POS paths skip any non-ASCII line with an explicit unsupported-character warning instead of emitting garbled bytes. Russian and Kazakh print as native ESC/POS text via PC866 (`ESC t 17`) — cheap CIS-market thermal printers have that code page in ROM, so Cyrillic is sharp printer glyphs rather than a scaled bitmap. Kazakh letters that PC866 cannot draw are romanized so the line still prints. Arabic/Persian still require the shaping passthrough described above. Browser / system printing remains the full-Unicode path for every other script; see [printing-architecture.md](printing-architecture.md#4-language-behavior).
 - **Kitchen tickets** in the backend document path and browser HTML path resolve their label language independently through the stored `kot_language_policy`. A fixed kitchen language (for example English) keeps tickets in that language even when the storefront runs in another language. The legacy WebUSB thermal KOT encoder keeps its raw-data layout but resolves catalog labels from the selected language.
 - For policy-aware paths, invalid or missing policy values always fall back to the store language; printing never fails because of a malformed policy.
 
@@ -34,7 +34,9 @@ For the full study of non-Latin script support on thermal printers — including
 
 ## Kitchen printing
 
-FloCafe can print kitchen order tickets to the default printer or route items to configured kitchen stations. A station needs an active printer and the product categories it handles. Items without a matching station fall back to the default kitchen route.
+FloCafe can print kitchen order tickets to the default printer or route items to configured kitchen stations. A station needs the product categories it handles; linking a printer is optional until separate kitchen and bar hardware is installed. Items without a matching station fall back to the default kitchen route. Cashier-only cafe categories (tobacco and similar) are not printed to the kitchen or bar.
+
+Cafe express first-run setup creates **Kitchen** and **Bar** stations and maps food categories to the kitchen and drink categories to the bar. A mixed order prints two tickets — food only on the kitchen ticket, drinks only on the bar ticket — not one combined ticket sent everywhere. Until each station has its own printer, both tickets go to the default printer with the station name on the header. Assign printers in **Settings → Kitchen Stations**.
 
 KOT printing can be disabled for the business. When it is disabled, neither automatic nor manual KOT print requests are sent.
 
@@ -64,11 +66,12 @@ FloCafe dispatches USB/OS-queue print jobs by sending the printer's exact name t
 
 FloCafe sends raw ESC/POS byte streams directly to the Windows print queue, bypassing the printer driver. This requires the queue's *Print Processor* to be set to `winprint` with datatype `RAW`.
 
-Manufacturer driver packages (such as Epson APD or Star) often install GDI graphics drivers that register proprietary print processors or reject raw byte streams. If prints fail or print garbled output:
+Manufacturer driver packages (such as Epson APD or Star) often install GDI graphics drivers that register proprietary print processors or reject raw byte streams. Graphics/GDI mode also rasterizes the page with interpolation, which makes receipts look blurry. If prints fail, print garbled output, or look washed-out:
 
 1. Right-click the printer in Windows → **Printer Properties → Advanced tab → Print Processor** → confirm it is set to `winprint` with datatype `RAW`.
-2. If issues persist, reinstall the printer using Windows' built-in **"Generic / Text Only"** driver (or the manufacturer's dedicated raw/ESC-POS mode).
-3. Re-select the printer in FloCafe's printer settings, as renaming or reinstalling changes the stored queue identifier.
+2. If issues persist, reinstall the printer using Windows' built-in **"Generic / Text Only"** driver (or the manufacturer's dedicated raw/ESC-POS mode). Do not use “print as image” / GDI graphics mode.
+3. In the Windows print dialog (system-print fallback), pick the thermal printer, set paper to 58 mm or 80 mm to match the roll, and turn **Fit to page** / **Scale** off.
+4. Re-select the printer in FloCafe's printer settings, as renaming or reinstalling changes the stored queue identifier.
 
 ### macOS and Linux (CUPS) printers
 

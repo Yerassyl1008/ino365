@@ -37,7 +37,7 @@ const {
   now,
 } = require('./helpers/test-setup');
 const { staffRoutes } = require('../main/routes/staff');
-const { getJWTSecret } = require('../main/routes/auth');
+const { authRoutes, getJWTSecret } = require('../main/routes/auth');
 
 function seedUser(db: any, id: string, role: string, pin = '1234') {
   const email = `${id}@test.local`;
@@ -71,7 +71,7 @@ async function main() {
   seedUser(db, 'server-target-145', 'server', '');
   seedUser(db, 'chef-target-145', 'chef', '');
 
-  const app = createApp({ '/api/staff': staffRoutes });
+  const app = createApp({ '/api/staff': staffRoutes, '/api/auth': authRoutes });
 
   console.log('\n── Manager boundaries ─────────────────────────────────────────');
   let result = await request(app).put('/api/staff/owner-145').set(managerAuth).send({
@@ -225,6 +225,46 @@ async function main() {
   assertEqual(result.status, 200, 'owner can deactivate operational staff');
   result = await request(app).post('/api/staff/cashier-target-145/reactivate').set(ownerAuth);
   assertEqual(result.status, 200, 'owner can reactivate operational staff');
+
+  console.log('\n── POS PIN access ──────────────────────────────────────────────');
+  const {
+    canAccessPos,
+    capabilityAllows,
+    PERMISSION_CAPABILITIES,
+    PIN_LOGIN_ROLES,
+  } = require('../shared/role-permissions');
+  const posCapability = PERMISSION_CAPABILITIES.find((capability: { id: string }) => capability.id === 'pos');
+  const kotCapability = PERMISSION_CAPABILITIES.find((capability: { id: string }) => capability.id === 'kotPrinting');
+  const payCapability = PERMISSION_CAPABILITIES.find((capability: { id: string }) => capability.id === 'billsPayments');
+  assert(posCapability, 'POS capability is defined');
+  assert(kotCapability, 'KOT printing capability is defined');
+  assert(payCapability, 'bills/payments capability is defined');
+
+  for (const role of ['owner', 'manager', 'cashier', 'server']) {
+    assert(canAccessPos(role), `${role} can access the cashier POS`);
+    assert(capabilityAllows(posCapability, role), `POS matrix allows ${role}`);
+    assert(capabilityAllows(kotCapability, role), `${role} can print kitchen tickets from POS`);
+  }
+  assert(!canAccessPos('chef'), 'chef cannot operate the cashier POS');
+  assert(!capabilityAllows(posCapability, 'chef'), 'POS matrix denies chef');
+  assert(!capabilityAllows(payCapability, 'server'), 'waiter cannot take POS payments');
+  assert(capabilityAllows(payCapability, 'cashier'), 'cashier can take POS payments');
+  assertEqual(PIN_LOGIN_ROLES.join(','), 'owner,manager,cashier,server,chef', 'every staff role may PIN-login');
+
+  const uniquePins: Array<[string, string, string]> = [
+    ['pin-pos-owner', 'owner', '5555'],
+    ['pin-pos-manager', 'manager', '4444'],
+    ['pin-pos-cashier', 'cashier', '2222'],
+    ['pin-pos-server', 'server', '1111'],
+    ['pin-pos-chef', 'chef', '3333'],
+  ];
+  for (const [id, role, pin] of uniquePins) {
+    seedUser(db, id, role, pin);
+    result = await request(app).post('/api/auth/pin-login').send({ pin });
+    assertEqual(result.status, 200, `${role} PIN logs into the cashier KorgenKassa session`);
+    assertEqual(result.body.user.role, role, `${role} PIN login returns the matching role`);
+    assert(typeof result.body.access_token === 'string' && result.body.access_token.length > 0, `${role} PIN login returns a token`);
+  }
 
   const results = getResults();
   console.log(`\nResults: ${results.passed}/${results.total} passed`);

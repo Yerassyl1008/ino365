@@ -77,7 +77,7 @@ export type PermissionCapability = {
  * is one of ROLE_ACCESS, which is also used by the matching route middleware.
  */
 export const PERMISSION_CAPABILITIES = [
-  { id: 'pos', area: 'orders', labelKey: 'pos', allowedRoles: ROLE_ACCESS.ownerManagerCashier },
+  { id: 'pos', area: 'orders', labelKey: 'pos', allowedRoles: ROLE_ACCESS.sales },
   { id: 'dashboard', area: 'reports', labelKey: 'dashboard', allowedRoles: ROLE_ACCESS.owner },
   { id: 'ordersReadCreate', area: 'orders', labelKey: 'ordersReadCreate', allowedRoles: ROLE_ACCESS.sales },
   { id: 'ordersStatus', area: 'orders', labelKey: 'ordersStatus', allowedRoles: ROLE_ACCESS.orderStatus },
@@ -86,6 +86,7 @@ export const PERMISSION_CAPABILITIES = [
   { id: 'orderItemVoid', area: 'orders', labelKey: 'orderItemVoid', allowedRoles: ROLE_ACCESS.ownerManager },
   { id: 'orderItemRestore', area: 'orders', labelKey: 'orderItemRestore', allowedRoles: ROLE_ACCESS.ownerManager },
   { id: 'heldOrders', area: 'orders', labelKey: 'heldOrders', allowedRoles: ROLE_ACCESS.sales },
+  { id: 'kotPrinting', area: 'orders', labelKey: 'kotPrinting', allowedRoles: ROLE_ACCESS.sales },
   { id: 'billsPayments', area: 'payments', labelKey: 'billsPayments', allowedRoles: ROLE_ACCESS.ownerManagerCashier },
   { id: 'billDiscounts', area: 'payments', labelKey: 'billDiscounts', allowedRoles: ROLE_ACCESS.ownerManager },
   { id: 'paymentMethodsView', area: 'payments', labelKey: 'paymentMethodsView', allowedRoles: ROLE_ACCESS.allStaff },
@@ -137,6 +138,11 @@ export function hasRole(value: string | null | undefined, allowedRoles: readonly
 
 export function pinAllowedForRole(role: string | null | undefined): boolean {
   return hasRole(role, PIN_LOGIN_ROLES);
+}
+
+/** One till window: waiters, cashiers, managers, and owners operate POS with PIN. Chefs stay on KDS. */
+export function canAccessPos(role: string | null | undefined): boolean {
+  return hasRole(role, ROLE_ACCESS.sales);
 }
 
 export function capabilityAllows(capability: PermissionCapability, role: string | null | undefined): boolean {

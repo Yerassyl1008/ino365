@@ -178,6 +178,31 @@ async function main() {
   assertEqual(movedSource.status, 'available', 'transfer frees the source table');
   assertEqual(movedDest.status, 'occupied', 'transfer occupies the target table');
 
+  console.log('\n── POS till rights ─────────────────────────────────────────────');
+  result = await request(app)
+    .post('/api/printers/print-kot')
+    .set('Authorization', `Bearer ${waiterToken}`)
+    .send({ orderId: orderA.id });
+  assertEqual(result.status, 400, 'waiter PIN session can print kitchen tickets from POS');
+  assertEqual(result.body.error, 'No default printer configured. Add a printer in Settings.', 'waiter KOT print is not role-blocked');
+
+  result = await request(app)
+    .post('/api/printers/print-bill')
+    .set('Authorization', `Bearer ${waiterToken}`)
+    .send({ billId: 999999 });
+  assertEqual(result.status, 403, 'waiter cannot print fiscal bills from POS');
+
+  result = await request(app)
+    .get('/api/reports/sales')
+    .set('Authorization', `Bearer ${waiterToken}`);
+  assertEqual(result.status, 403, 'waiter cannot open owner reports from the till');
+
+  result = await request(app)
+    .post('/api/bills/1/payment')
+    .set('Authorization', `Bearer ${waiterToken}`)
+    .send({ method: 'cash', amount: 100 });
+  assertEqual(result.status, 403, 'waiter cannot take payment at the till');
+
   void ownerAuth;
   const results = getResults();
   console.log(`\nResults: ${results.passed}/${results.total} passed`);

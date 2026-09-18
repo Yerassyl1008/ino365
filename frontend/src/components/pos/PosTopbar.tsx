@@ -5,7 +5,8 @@ import CustomerSearch from './CustomerSearch';
 import { useCartStore } from '@/store/cart';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { LayoutGrid, Maximize2, Minimize2 } from 'lucide-react';
+import { LayoutGrid, Lock, Maximize2, Minimize2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import type { Table } from '@/lib/types';
 import { useTranslations } from 'use-intl';
 
@@ -18,11 +19,18 @@ interface Props {
 
 export default function PosTopbar({ tables, onShowTablePicker, fullscreen, onToggleFullscreen }: Props) {
   const cart = useCartStore();
-  const { currentTenant } = useAuthStore();
+  const { currentTenant, logout } = useAuthStore();
+  const router = useRouter();
   const tablesRequired = usePosSettingsStore((s) => s.tablesRequired);
   const t = useTranslations('pos');
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const showTableBtn = isRestaurant && cart.orderType === 'dine_in' && tablesRequired;
+
+  const lockTill = () => {
+    cart.clearCart();
+    logout();
+    router.push('/auth/login');
+  };
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b bg-card shrink-0 px-3 py-2 md:gap-3 md:px-4 md:py-2.5">
@@ -50,6 +58,15 @@ export default function PosTopbar({ tables, onShowTablePicker, fullscreen, onTog
         <div className="shrink-0">
           <PrinterStatus />
         </div>
+        <button
+          type="button"
+          onClick={lockTill}
+          className="touch-target shrink-0 rounded-lg border border-border bg-card px-3 text-muted-foreground transition-colors hover:bg-muted active:bg-muted"
+          title={t('lockTill')}
+          aria-label={t('lockTill')}
+        >
+          <Lock size={16} />
+        </button>
         <button
           type="button"
           onClick={onToggleFullscreen}

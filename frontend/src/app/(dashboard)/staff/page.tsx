@@ -192,6 +192,7 @@ export default function StaffPage() {
       <div className="mb-6 rounded-xl border border-border bg-muted/40 p-4 text-sm space-y-1.5">
         <p className="font-medium text-foreground">{t('pinGuideTitle')}</p>
         <p className="text-muted-foreground">{t('pinGuideLogin')}</p>
+        <p className="text-muted-foreground">{t('pinGuidePos')}</p>
         <p className="text-muted-foreground">{t('pinGuideTableside')}</p>
         <p className="text-muted-foreground">{t('pinGuideApprove')}</p>
         <p className="text-muted-foreground">{t('pinGuideChef')}</p>

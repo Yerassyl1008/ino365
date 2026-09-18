@@ -11,6 +11,20 @@ export type CatalogBusinessType = 'restaurant' | 'retail';
 export const RESTAURANT_TEMPLATE_CATEGORY_IDS = [
   'cat-express-food',
   'cat-express-beverages',
+  'cat-express-soups',
+  'cat-express-salads',
+  'cat-express-pizza',
+  'cat-express-sushi',
+  'cat-express-shashlik',
+  'cat-express-sides',
+  'cat-express-cold-apps',
+  'cat-express-sauces',
+  'cat-express-beer-snacks',
+  'cat-express-bakery',
+  'cat-express-hot-drinks',
+  'cat-express-soft-drinks',
+  'cat-express-alcohol',
+  'cat-express-tobacco',
   'cat-demo-grill',
   'cat-demo-main',
   'cat-demo-starters',
@@ -25,6 +39,38 @@ export const RETAIL_TEMPLATE_CATEGORY_IDS = [
   'cat-express-drinks',
   'cat-express-household',
 ] as const;
+
+/** Cafe first-run kitchen station: cooked / plated food categories. */
+export const CAFE_KITCHEN_CATEGORY_IDS = [
+  'cat-express-soups',
+  'cat-express-salads',
+  'cat-express-pizza',
+  'cat-express-sushi',
+  'cat-express-shashlik',
+  'cat-express-sides',
+  'cat-express-cold-apps',
+  'cat-express-sauces',
+  'cat-express-beer-snacks',
+  'cat-express-bakery',
+] as const;
+
+/** Cafe first-run bar station: hot drinks, soft drinks, alcohol. */
+export const CAFE_BAR_CATEGORY_IDS = [
+  'cat-express-hot-drinks',
+  'cat-express-soft-drinks',
+  'cat-express-alcohol',
+] as const;
+
+/**
+ * Cafe items that should not print a kitchen/bar ticket (cashier-sold,
+ * no prep). Unmatched non-skip categories still default to the kitchen.
+ */
+export const CAFE_SKIP_KOT_CATEGORY_IDS = [
+  'cat-express-tobacco',
+] as const;
+
+export const CAFE_KITCHEN_STATION_ID = 'stn-express-kitchen';
+export const CAFE_BAR_STATION_ID = 'stn-express-bar';
 
 export function isBusinessScope(value: unknown): value is BusinessScope {
   return value === 'restaurant' || value === 'retail' || value === 'both';

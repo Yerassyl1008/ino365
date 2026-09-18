@@ -122,7 +122,7 @@ export function generateKotHtml(
   const base = detectTicketDirection(lang);
   const timezone = resolveKotTimezone(opts.timezone);
 
-  const fontSize = paperWidth === 58 ? '10px' : '12px';
+  const fontSize = paperWidth === 58 ? '12px' : '14px';
   const padding = paperWidth === 58 ? '4px' : '6px';
   const locale = LANGUAGES[lang]?.locale ?? 'en-US';
 
@@ -158,8 +158,8 @@ export function generateKotHtml(
     : `<div style="margin:${padding} 0;">${escapeHtml(tr('print.kot.noPendingItems'))}</div>`;
 
   return `
-    <div class="kot-container" dir="${base}" style="text-align:start;padding:${padding};font-family:'Courier New',monospace;font-size:${fontSize};">
-      <h2 style="margin:0 0 ${padding} 0;font-size:${paperWidth === 58 ? '14px' : '16px'};text-align:center;">${escapeHtml(tr('print.kot.banner'))}</h2>
+    <div class="kot-container" dir="${base}" style="text-align:start;padding:${padding};font-family:'Courier New',Courier,monospace;font-size:${fontSize};font-weight:700;color:#000;line-height:1.25;-webkit-font-smoothing:none;font-smooth:never;">
+      <h2 style="margin:0 0 ${padding} 0;font-size:${paperWidth === 58 ? '16px' : '18px'};font-weight:800;text-align:center;color:#000;">${escapeHtml(tr('print.kot.banner'))}</h2>
       <p style="margin:2px 0;font-weight:bold;">${formatOrderNumberLabel(tr('pos.orderNumber'), orderNumber, base)}</p>
       ${order.table?.name ? `<p style="margin:2px 0;">${escapeHtml(labelWithoutPlaceholder(tr('pos.tableLabel')))}: ${directionalValue(directionalText(String(order.table.name), base), base)}</p>` : ''}
       ${orderType ? `<p style="margin:2px 0;">${escapeHtml(tr('print.kot.type'))}: ${escapeHtml(orderType)}</p>` : ''}
