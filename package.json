@@ -240,7 +240,7 @@
     "typescript": "^5.4.5"
   },
   "dependencies": {
-    "@googleapis/drive": "^21.0.0",
+    "@googleapis/drive": "^26.0.0",
     "@napi-rs/canvas": "^1.0.9",
     "@point-of-sale/receipt-printer-encoder": "^3.0.3",
     "@whiskeysockets/baileys": "^7.0.0-rc14",
