@@ -7,6 +7,9 @@ import { Button } from '@/components/ui/button';
 import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import type { Product, Addon, AddonGroup } from '@/lib/types';
+import { useCartStore } from '@/store/cart';
+import DishPrice from './DishPrice';
+import { catalogLineDiscount, visibleDishPrices } from '@shared/dish-discount';
 
 interface Props {
   product: Product;
@@ -35,6 +38,7 @@ export default function AddonModal({
 }: Props) {
   const t = useTranslations('pos');
   const fmt = useFormatCurrency();
+  const orderType = useCartStore((s) => s.orderType);
   const [selected, setSelected] = useState<Record<string | number, Addon[]>>(() => groupInitialAddons(initialAddons));
   const [quantity, setQuantity] = useState(initialQuantity);
   const [instructions, setInstructions] = useState(initialInstructions);
@@ -93,7 +97,12 @@ export default function AddonModal({
 
   const allAddons = Object.values(selected).flat();
   const addonTotal = allAddons.reduce((sum, a) => sum + Number(a.price) * (a.quantity || 1), 0);
-  const itemTotal = (Number(product.price) + addonTotal) * quantity;
+  const unitPrice = Number(product.price);
+  const addonLine = addonTotal * quantity;
+  const lineOriginal = (unitPrice + addonTotal) * quantity;
+  const lineDiscount = catalogLineDiscount(product, orderType, unitPrice, quantity, addonLine);
+  const itemTotal = Math.max(0, lineOriginal - lineDiscount);
+  const unitPrices = visibleDishPrices(product, orderType);
 
   const isValid = groups.every((g) => {
     const count = getGroupTotalQuantity(g.id);
@@ -115,7 +124,9 @@ export default function AddonModal({
         <div className="flex justify-between items-center p-5 border-b border-border">
           <div>
             <h2 className="text-lg font-bold text-foreground">{product.name}</h2>
-            <p className="text-brand font-semibold">{fmt(Number(product.price))}</p>
+            <p>
+              <DishPrice original={unitPrices.original} discounted={unitPrices.discounted} className="text-brand font-semibold" />
+            </p>
           </div>
           <button onClick={onClose} className="touch-target rounded-full text-gray-400 hover:text-muted-foreground active:bg-muted" aria-label={t('close')}>
             <X size={20} />

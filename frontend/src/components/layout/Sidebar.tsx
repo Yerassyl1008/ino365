@@ -36,6 +36,7 @@ import {
   SlidersHorizontal,
   FileText,
   ConciergeBell,
+  ListChecks,
   type LucideIcon,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -114,6 +115,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { href: '/warehouse?tab=movements', labelKey: 'stockMovements', icon: ArrowLeftRight, roles: ROLE_ACCESS.ownerManager, businessTypes: ['restaurant'] },
   { href: '/warehouse?tab=recipes', labelKey: 'recipes', icon: ClipboardList, roles: ROLE_ACCESS.ownerManager, businessTypes: ['restaurant'] },
   { href: '/warehouse?tab=ingredients', labelKey: 'stockBalances', icon: Boxes, roles: ROLE_ACCESS.ownerManager, businessTypes: ['restaurant'] },
+  { href: '/warehouse?tab=count', labelKey: 'stockCount', icon: ListChecks, roles: ROLE_ACCESS.ownerManager, businessTypes: ['restaurant'] },
   { href: '/stock', labelKey: 'stockBalances', icon: Boxes, roles: ROLE_ACCESS.ownerManager, businessTypes: ['retail'] },
   { href: '/staff', labelKey: 'staff', icon: UserCog, roles: ROLE_ACCESS.ownerManager, businessTypes: null },
   { href: '/whatsapp', labelKey: 'whatsapp', icon: MessageCircle, roles: ROLE_ACCESS.ownerManagerCashier, businessTypes: null },
@@ -126,7 +128,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
 const NAV_SECTIONS: Array<{ id: NavSectionId; labelKey: NavKey; hrefs: string[] }> = [
   { id: 'work', labelKey: 'work', hrefs: ['/pos', '/tables', '/orders', '/orders?status=cancelled', '/products', '/addon-groups', '/customers', '/staff'] },
   { id: 'reports', labelKey: 'analytics', hrefs: [WORKBENCH_HREF, ADVISOR_HREF, '/analytics/sales', '/analytics/abc', '/analytics/staff', '/analytics/products', '/reports/day-close', '/reports/financial', '/reports/service-charge'] },
-  { id: 'warehouse', labelKey: 'sectionWarehouse', hrefs: ['/warehouse?tab=movements', '/warehouse?tab=recipes', '/warehouse?tab=ingredients', '/stock'] },
+  { id: 'warehouse', labelKey: 'sectionWarehouse', hrefs: ['/warehouse?tab=movements', '/warehouse?tab=recipes', '/warehouse?tab=ingredients', '/warehouse?tab=count', '/stock'] },
   { id: 'apps', labelKey: 'apps', hrefs: ['/whatsapp', '/kds', '/print-test'] },
   { id: 'settings', labelKey: 'settings', hrefs: ['/settings'] },
 ];

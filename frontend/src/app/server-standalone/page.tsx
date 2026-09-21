@@ -9,11 +9,23 @@ import { useSyncServerLanguage } from '@/lib/i18n';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { toastApiError } from '@/lib/api-error';
+import { catalogLineDiscount, visibleDishPrices } from '@shared/dish-discount';
+import HallSwitcher from '@/components/pos/HallSwitcher';
+import type { Hall } from '@/lib/types';
 
 type User = { id: string; name: string; email: string; role: string };
 type Category = { id: string; name: string };
-type Product = { id: string; category_id: string | null; name: string; price: number | string; is_active: number };
-type Table = { id: string; name?: string; number?: string; status?: string; activeOrder?: Order | null; current_order?: Order | null };
+type Product = {
+  id: string;
+  category_id: string | null;
+  name: string;
+  price: number | string;
+  is_active: number;
+  discount_type?: 'percentage' | 'amount' | null;
+  discount_value?: number | null;
+  discount_applies_to?: Array<'dine_in' | 'takeaway' | 'delivery' | 'online'> | null;
+};
+type Table = { id: string; name?: string; number?: string; status?: string; hall_id?: string | null; hall_name?: string | null; activeOrder?: Order | null; current_order?: Order | null };
 type OrderItem = { id: number; product_name: string; quantity: number; status: string; special_instructions?: string | null };
 type Order = { id: number; order_number: string; table_id?: string | null; status: string; items?: OrderItem[]; customer?: { id: string; name: string; phone?: string } | null };
 type DraftLine = { product: Product; quantity: number; note: string };
@@ -230,6 +242,8 @@ export default function ServerStandalonePage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [tables, setTables] = useState<Table[]>([]);
+  const [halls, setHalls] = useState<Hall[]>([]);
+  const [selectedHallId, setSelectedHallId] = useState<string>('');
   const [selectedTableId, setSelectedTableId] = useState<string>('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
   const [query, setQuery] = useState('');
@@ -244,15 +258,19 @@ export default function ServerStandalonePage() {
 
   async function loadAll() {
     if (!api) return;
-    const [categoriesRes, productsRes, tablesRes] = await Promise.all([
+    const [categoriesRes, productsRes, tablesRes, hallsRes] = await Promise.all([
       api.get('/api/categories', { params: { active: 'true' } }),
       api.get('/api/products', { params: { active: 'true' } }),
       api.get('/api/tables', { params: { active: 'true' } }),
+      api.get('/api/halls'),
     ]);
     setCategories(categoriesRes.data.categories || []);
     setProducts(productsRes.data.products || []);
     const loadedTables = tablesRes.data.tables || [];
+    const loadedHalls: Hall[] = hallsRes.data.halls || [];
     setTables(loadedTables);
+    setHalls(loadedHalls);
+    if (!selectedHallId && loadedHalls[0]) setSelectedHallId(loadedHalls[0].id);
     if (!selectedTableId && loadedTables[0]) setSelectedTableId(loadedTables[0].id);
   }
 
@@ -296,12 +314,16 @@ export default function ServerStandalonePage() {
       api.get('/api/categories', { params: { active: 'true' } }),
       api.get('/api/products', { params: { active: 'true' } }),
       api.get('/api/tables', { params: { active: 'true' } }),
-    ]).then(([categoriesRes, productsRes, tablesRes]) => {
+      api.get('/api/halls'),
+    ]).then(([categoriesRes, productsRes, tablesRes, hallsRes]) => {
       if (cancelled) return;
       setCategories(categoriesRes.data.categories || []);
       setProducts(productsRes.data.products || []);
       const loadedTables = tablesRes.data.tables || [];
+      const loadedHalls: Hall[] = hallsRes.data.halls || [];
       setTables(loadedTables);
+      setHalls(loadedHalls);
+      if (!selectedHallId && loadedHalls[0]) setSelectedHallId(loadedHalls[0].id);
       if (!selectedTableId && loadedTables[0]) setSelectedTableId(loadedTables[0].id);
     }).catch(() => toast.error(t('couldNotLoadData')));
     return () => { cancelled = true; };
@@ -457,7 +479,12 @@ export default function ServerStandalonePage() {
     const matchesQuery = !query || product.name.toLowerCase().includes(query.toLowerCase());
     return matchesCategory && matchesQuery;
   });
-  const draftTotal = draft.reduce((sum, line) => sum + Number(line.product.price || 0) * line.quantity, 0);
+  const draftTotal = draft.reduce((sum, line) => {
+    const price = Number(line.product.price || 0);
+    const qty = line.quantity;
+    const discount = catalogLineDiscount(line.product, 'dine_in', price, qty, 0);
+    return sum + Math.max(0, price * qty - discount);
+  }, 0);
   const draftCount = draft.reduce((sum, line) => sum + line.quantity, 0);
   const ticketProps = {
     t,
@@ -568,7 +595,7 @@ export default function ServerStandalonePage() {
   }
 
   return (
-    <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-slate-50 text-gray-900">
+    <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-slate-50 text-gray-900 flo-phone-page-scroll md:h-dvh md:overflow-hidden">
       <header className="relative z-20 shrink-0 border-b border-gray-200 bg-white/95 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
         <div className="flex w-full min-w-0 items-center gap-2 sm:gap-3">
           {mobileView === 'menu' && (
@@ -595,11 +622,24 @@ export default function ServerStandalonePage() {
         </div>
       </header>
 
-      <main className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        <section className={`${mobileView === 'tables' ? 'flex' : 'hidden'} min-h-0 w-full shrink-0 flex-col overflow-y-auto border-gray-200 bg-white p-4 md:flex md:w-56 md:border-e`}>
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">{t('tables')}</h2>
+      <main className="flex min-h-0 min-w-0 flex-1 overflow-hidden flo-phone-page-scroll md:overflow-hidden">
+        <section className={`${mobileView === 'tables' ? 'flex' : 'hidden'} min-h-0 w-full shrink-0 flex-1 flex-col overflow-hidden border-gray-200 bg-white p-3 flo-phone-page-scroll md:flex md:w-56 md:overflow-hidden md:border-e md:p-4`}>
+          <h2 className="mb-2 shrink-0 text-sm font-semibold uppercase tracking-wide text-gray-500 md:mb-3">{t('tables')}</h2>
+          <div className="shrink-0 bg-white">
+            <HallSwitcher
+              halls={halls}
+              selectedHallId={selectedHallId || null}
+              onSelect={setSelectedHallId}
+              testId="server-hall-tabs"
+              tone="waiter"
+            />
+          </div>
+          <div className="flo-primary-scroll pb-6">
           <div className="grid grid-cols-2 gap-3 md:grid-cols-1">
-            {tables.map((table) => {
+            {(selectedHallId
+              ? tables.filter((table) => table.hall_id === selectedHallId || (!table.hall_id && halls.find((hall) => hall.id === selectedHallId)?.is_default))
+              : tables
+            ).map((table) => {
               const selected = table.id === selectedTableId;
               const order = table.activeOrder || table.current_order;
               return (
@@ -608,6 +648,7 @@ export default function ServerStandalonePage() {
                   type="button"
                   onClick={() => {
                     setSelectedTableId(table.id);
+                    if (table.hall_id) setSelectedHallId(table.hall_id);
                     setMobileView('menu');
                     setTicketOpen(false);
                   }}
@@ -619,15 +660,16 @@ export default function ServerStandalonePage() {
               );
             })}
           </div>
+          </div>
         </section>
 
-        <section className={`${mobileView === 'menu' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white md:flex`}>
+        <section className={`${mobileView === 'menu' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white flo-phone-page-scroll md:flex md:overflow-hidden`}>
           <div className="shrink-0 space-y-3 px-4 pt-4">
             <div className="relative min-w-0">
               <Search size={20} className="pointer-events-none absolute start-4 top-4 text-gray-400" />
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchMenu')} className="h-14 w-full rounded-xl border border-gray-200 bg-white ps-12 pe-4 text-lg text-gray-900 caret-gray-900 focus:border-brand focus:outline-none" />
             </div>
-            <div className="flex min-h-12 min-w-0 max-w-full flex-nowrap gap-2 overflow-x-auto overflow-y-hidden overscroll-x-contain pb-1 touch-pan-x [-webkit-overflow-scrolling:touch]">
+            <div className="flo-h-scroll flex min-h-12 min-w-0 max-w-full flex-nowrap gap-2 pb-1">
               <button type="button" onClick={() => setSelectedCategoryId('all')} className={`h-12 shrink-0 whitespace-nowrap rounded-full px-5 text-base font-medium ${selectedCategoryId === 'all' ? 'bg-brand text-white' : 'bg-gray-100 text-gray-700'}`}>{tOrders('all')}</button>
               {categories.map((category) => (
                 <button
@@ -641,17 +683,27 @@ export default function ServerStandalonePage() {
               ))}
             </div>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+          <div className="flo-primary-scroll px-4 pb-24 pt-3 md:pb-4">
+            <div className="grid grid-cols-2 content-start items-start gap-3 auto-rows-max sm:grid-cols-2 2xl:grid-cols-3">
               {filteredProducts.map((product) => (
                 <button
                   key={product.id}
                   type="button"
                   onClick={() => addProduct(product)}
-                  className="flex min-h-16 min-w-0 items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-4 text-start active:bg-brand/5 md:min-h-28 md:flex-col md:items-start"
+                  className="flex h-auto min-h-16 min-w-0 self-start items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-4 text-start active:bg-brand/5 md:min-h-28 md:flex-col md:items-start"
                 >
                   <span className="text-lg font-semibold leading-snug">{product.name}</span>
-                  <span className="shrink-0 text-lg font-medium text-gray-600"><Ltr>{money(product.price)}</Ltr></span>
+                  {(() => {
+                    const prices = visibleDishPrices(product, 'dine_in');
+                    return prices.discounted != null ? (
+                      <span className="shrink-0 inline-flex items-baseline gap-1.5 text-lg font-medium">
+                        <span className="text-gray-400 line-through text-sm"><Ltr>{money(prices.original)}</Ltr></span>
+                        <span className="text-gray-600"><Ltr>{money(prices.discounted)}</Ltr></span>
+                      </span>
+                    ) : (
+                      <span className="shrink-0 text-lg font-medium text-gray-600"><Ltr>{money(product.price)}</Ltr></span>
+                    );
+                  })()}
                 </button>
               ))}
             </div>
@@ -663,7 +715,7 @@ export default function ServerStandalonePage() {
         </section>
       </main>
 
-      <div className={`${mobileView === 'menu' ? 'block' : 'hidden'} shrink-0 border-t border-gray-200 bg-white px-4 pt-3 md:block xl:hidden pb-[max(1rem,env(safe-area-inset-bottom))]`}>
+      <div className={`${mobileView === 'menu' ? 'block' : 'hidden'} shrink-0 border-t border-gray-200 bg-white px-4 pt-3 md:static md:block xl:hidden max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-20 pb-[max(1rem,env(safe-area-inset-bottom))]`}>
           <button
             type="button"
             onClick={() => setTicketOpen(true)}

@@ -66,6 +66,7 @@ function runTest() {
     'C:\\Users\\admin\\flocafe\\FloCafe\\node_modules\\electron\\dist\\electron.exe .',
     '/Users/dev/FloCafe/node_modules/electron/dist/electron .',
     'node /path/to/FloCafe/dev-server.js',
+    'node /path/to/FloCafe/scripts/vps-server.cjs',
     'node /path/to/FloCafe/dist/index.js',
     'com.flo.desktop.helper',
     'flo-pos-service',

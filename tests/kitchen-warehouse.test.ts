@@ -121,6 +121,59 @@ async function main() {
     assertEqual(res.status, 200, 'waste rice');
     assertEqual(res.data.ingredient.stock_quantity, 1200, 'rice wasted');
 
+    console.log('\n─── Bulk count ───');
+    const listed = await api(baseUrl, '/api/warehouse/ingredients', { headers: authHeader });
+    assertEqual(listed.status, 200, 'list ingredients');
+    assertEqual(listed.data.warehouse_enabled, true, 'warehouse tracking defaults on');
+
+    res = await api(baseUrl, '/api/warehouse/count', {
+      method: 'POST',
+      headers: authHeader,
+      body: {
+        items: [
+          { ingredient_id: riceId, quantity: 900 },
+          { ingredient_id: lambId, quantity: 500 },
+          { ingredient_id: '', quantity: 10 },
+        ],
+        note: 'Evening count',
+      },
+    });
+    assertEqual(res.status, 200, 'bulk count succeeds');
+    assertEqual(res.data.counted, 1, 'only changed rice is counted');
+    assertEqual(res.data.skipped, 2, 'unchanged and empty rows skipped');
+    assertEqual(db.prepare('SELECT stock_quantity FROM ingredients WHERE id = ?').get(riceId).stock_quantity, 900, 'rice counted to 900');
+    assertEqual(db.prepare('SELECT stock_quantity FROM ingredients WHERE id = ?').get(lambId).stock_quantity, 500, 'lamb left as is');
+
+    console.log('\n─── Warehouse optional ───');
+    const disable = await api(baseUrl, '/api/settings/kitchen_warehouse_enabled', {
+      method: 'PUT',
+      headers: authHeader,
+      body: { value: 'false' },
+    });
+    assertEqual(disable.status, 200, 'disable kitchen warehouse');
+    db.prepare('UPDATE ingredients SET stock_quantity = 1 WHERE id = ?').run(riceId);
+    const unblocked = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: authHeader,
+      body: { type: 'takeaway', items: [{ product_id: 'prod-plov', quantity: 1 }] },
+    });
+    assertEqual(unblocked.status, 201, 'POS sells when warehouse is off even with low stock');
+    assertEqual(db.prepare('SELECT stock_quantity FROM ingredients WHERE id = ?').get(riceId).stock_quantity, 1, 'stock is not deducted when warehouse is off');
+
+    const enable = await api(baseUrl, '/api/settings/kitchen_warehouse_enabled', {
+      method: 'PUT',
+      headers: authHeader,
+      body: { value: 'true' },
+    });
+    assertEqual(enable.status, 200, 're-enable kitchen warehouse');
+    const blockedAgain = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: authHeader,
+      body: { type: 'takeaway', items: [{ product_id: 'prod-plov', quantity: 1 }] },
+    });
+    assertEqual(blockedAgain.status, 400, 'insufficient recipe stock blocks again when warehouse is on');
+    db.prepare('UPDATE ingredients SET stock_quantity = 900 WHERE id = ?').run(riceId);
+
     console.log('\n─── Shashlik demo seed ───');
     seedShashlikMenu(db, 'ru');
     const plov = db.prepare("SELECT name FROM products WHERE id = 'prod-demo-plov'").get();

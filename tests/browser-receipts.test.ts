@@ -184,8 +184,27 @@ async function run() {
     assert('CSS contains RTL logical properties and bidi styles',
       html.includes('.text-end { text-align: end !important; }') &&
       html.includes('.num { unicode-bidi: isolate; white-space: nowrap; }') &&
-      html.includes('.ltr { direction: ltr; unicode-bidi: isolate; }') &&
-      html.includes('margin-inline-start: 50%')
+      html.includes('.ltr { direction: ltr; unicode-bidi: isolate;') &&
+      html.includes('table-layout: fixed')
+    );
+    assert('Invoice and date sit on stacked full-width rows',
+      html.includes('class="bill-details"') &&
+      html.includes('class="meta-line"') &&
+      html.includes('class="meta-value"')
+    );
+    assert('Item table pins qty/price/sum columns',
+      html.includes('class="col-qty"') &&
+      html.includes('class="col-rate"') &&
+      html.includes('class="col-amt"') &&
+      html.includes('class="item-name"')
+    );
+    assert('item names wrap on spaces only — no hyphenation or letter-break',
+      html.includes('hyphens: none') &&
+      html.includes('word-break: keep-all') &&
+      html.includes('overflow-wrap: normal') &&
+      !html.includes('hyphens: auto') &&
+      !html.includes('overflow-wrap: anywhere') &&
+      !html.includes('word-break: break-word')
     );
   }
 
@@ -208,10 +227,10 @@ async function run() {
     assert('Table label shows Russian "Стол"', html.includes('<strong>Стол</strong>'));
     assert('Customer No label shows Russian "Номер клиента"', html.includes('<strong>Номер клиента</strong>'));
     assert('Table headers show Russian items, qty, rate, amount',
-      html.includes('<th>Позиция</th>') &&
-      html.includes('<th class="text-end">Кол-во</th>') &&
-      html.includes('<th class="text-end">Цена</th>') &&
-      html.includes('<th class="text-end">Сумма</th>')
+      html.includes('>Позиция</th>') &&
+      html.includes('>Кол-во</th>') &&
+      html.includes('>Цена</th>') &&
+      html.includes('>Сумма</th>')
     );
     assert('Tax Details header shows Russian "Детали налога"', html.includes('<th colspan="2">Детали налога</th>'));
     assert('Grand Total row shows Russian "Итого к оплате"', html.includes('<strong>Итого к оплате</strong>'));
@@ -341,6 +360,135 @@ async function run() {
       kkHtml.includes('Шот №') &&
       kkHtml.includes('Барлығы төленеді') &&
       kkHtml.includes('Келгеніңізге рақмет!')
+    );
+  }
+
+  console.log('\nTest Suite 5b: KZT guest-check spacing (₸ not glued to the amount)');
+  {
+    const shashlykOrder: Order = {
+      ...testIranOrder,
+      items: [{
+        id: 1,
+        order_id: 101,
+        product_id: 'p-shashlyk',
+        product_name: 'Шашлык',
+        unit_price: 1800,
+        quantity: 3,
+        subtotal: 5400,
+        tax_amount: 0,
+        total: 5400,
+        addons: null,
+        special_instructions: null,
+        status: 'served',
+      }],
+      customer: { ...testIranOrder.customer!, name: 'Aisultan' },
+    };
+    const shashlykBill: Bill = {
+      ...testIranBill,
+      bill_number: 'INV-20260919-0001',
+      subtotal: 5400,
+      tax_amount: 0,
+      tax_breakdown: [],
+      service_charge: 0,
+      total: 5400,
+      paid_amount: 0,
+      balance: 5400,
+      payment_status: 'unpaid',
+      payment_details: [],
+      order: shashlykOrder,
+    };
+    const prefixTenant = {
+      business_name: 'FloCafe',
+      currency: 'KZT',
+      country: 'US',
+      timezone: 'Asia/Almaty',
+    };
+    const prefixHtml = generateBillHtml(shashlykBill, prefixTenant, { language: 'ru', showTaxBreakdown: false });
+    assert('prefix KZT unit price is ₸ 1,800.00 not ₸1,800.00',
+      prefixHtml.includes('₸\u00A01,800.00') && !prefixHtml.includes('₸1,800.00')
+    );
+    assert('prefix KZT line total is ₸ 5,400.00 not ₸5,400.00',
+      prefixHtml.includes('₸\u00A05,400.00') && !prefixHtml.includes('₸5,400.00')
+    );
+    assert('quantity stays in its own cell', prefixHtml.includes('>3</td>'));
+
+    const kzTenant = {
+      business_name: 'FloCafe',
+      currency: 'KZT',
+      country: 'KZ',
+      timezone: 'Asia/Almaty',
+    };
+    const kzHtml = generateBillHtml(shashlykBill, kzTenant, { language: 'ru', showTaxBreakdown: false });
+    assert('suffix KZT keeps a space before ₸', /\d\u00A0₸/.test(kzHtml) && !/\d₸/.test(kzHtml));
+    assert('suffix KZT does not duplicate the sign', !kzHtml.includes('₸\u00A0₸') && (kzHtml.match(/₸/g) || []).length >= 2);
+    assert('money columns leave room for the name column',
+      kzHtml.includes('.items-table .col-item { width: auto; }') &&
+      kzHtml.includes('.items-table .col-rate, .items-table .col-amt { width: 15mm; }') &&
+      !kzHtml.includes('width: 18mm') &&
+      !kzHtml.includes('width: 24mm')
+    );
+  }
+
+  console.log('\nTest Suite 5c: Aisultan guest check is not smashed (no ₹, no hyphenation)');
+  {
+    const absolutOrder: Order = {
+      ...testIranOrder,
+      items: [{
+        id: 1,
+        order_id: 101,
+        product_id: 'p-absolut',
+        product_name: 'Абсолют Оригинал',
+        unit_price: 11000,
+        quantity: 1,
+        subtotal: 11000,
+        tax_amount: 0,
+        total: 11000,
+        addons: null,
+        special_instructions: null,
+        status: 'served',
+      }],
+      customer: { ...testIranOrder.customer!, name: 'Aisultan' },
+    };
+    const absolutBill: Bill = {
+      ...testIranBill,
+      bill_number: 'INV-20260920-0001',
+      subtotal: 11000,
+      tax_amount: 0,
+      tax_breakdown: [],
+      service_charge: 0,
+      total: 11000,
+      paid_amount: 11000,
+      balance: 0,
+      payment_status: 'paid',
+      payment_details: [{ method: 'cash', amount: 11000, timestamp: '2026-09-20T07:51:00.000Z' }],
+      order: absolutOrder,
+    };
+    // Live KorgenKassa still carries FloCafe IN/INR install defaults.
+    const defaultInrTenant = {
+      business_name: 'Aisultan',
+      currency: 'INR',
+      country: 'IN',
+      timezone: 'Asia/Almaty',
+    };
+    const html = generateBillHtml(absolutBill, defaultInrTenant, {
+      language: 'ru',
+      paperSize: 'thermal58',
+      showTaxBreakdown: false,
+    });
+    assert('product name stays one phrase (CSS will wrap on the space, not letters)',
+      html.includes('Абсолют Оригинал') && !html.includes('Аб-') && !html.includes('Ори-')
+    );
+    assert('header label Позиция is not pre-hyphenated in HTML',
+      html.includes('>Позиция</th>') && !html.includes('По-') && !html.includes('зи-')
+    );
+    assert('FloCafe INR default still prints ₸ on the guest check, never ₹',
+      html.includes('₸') && !html.includes('₹') && html.includes('11,000.00')
+    );
+    assert('qty/price/sum cells stay nowrap',
+      html.includes('th.num, .items-table td.num') && html.includes('white-space: nowrap')
+    );
+    assert('page does not allow a horizontal scrollbar',
+      html.includes('overflow-x: hidden') && html.includes('max-width: min(58mm, 100%)')
     );
   }
 

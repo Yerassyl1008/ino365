@@ -90,6 +90,7 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   // default (frontend/src/store/theme.ts), so a GET before that point should
   // return it rather than 404.
   theme_mode: 'system',
+  kitchen_warehouse_enabled: 'true',
 };
 
 function maskSetting(key: string, value: string): string {
@@ -943,6 +944,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'telemetry_enabled',
   'diagnostics_consent',
   'kds_enabled', 'server_app_enabled', 'kot_printing_enabled',
+  'kitchen_warehouse_enabled',
   'split_checks_enabled',
   BILL_LANGUAGE_POLICY_KEY, KOT_LANGUAGE_POLICY_KEY,
   'currency_display', 'number_digits', 'calendar',
@@ -1109,6 +1111,12 @@ router.put('/:key', settingsWriteRateLimit, requireRole(...ROLE_ACCESS.ownerMana
       if (wasEnabled && turningOff) {
         db.prepare('DELETE FROM kds_pairing_tokens').run();
       }
+    }
+
+    if (req.params.key === 'kitchen_warehouse_enabled') {
+      const flag = boolFlag(value);
+      if (!flag) return res.status(400).json({ error: 'kitchen_warehouse_enabled must be true or false' });
+      valueToPersist = flag;
     }
 
     db.prepare(`

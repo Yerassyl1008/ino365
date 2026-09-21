@@ -135,3 +135,12 @@ export const createHeldOrdersStore = (apiClient: HeldOrdersApiClient = api) => c
 });
 
 export const useHeldOrdersStore = createHeldOrdersStore(api);
+
+/** Prefer the API error body over Axios' generic "Request failed with status code …". */
+export function heldOrderErrorMessage(error: unknown, fallback: string): string {
+  if (error && typeof error === 'object' && 'response' in error) {
+    const message = (error as { response?: { data?: { error?: unknown } } }).response?.data?.error;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return fallback;
+}

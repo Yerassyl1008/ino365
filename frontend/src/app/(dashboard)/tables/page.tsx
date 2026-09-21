@@ -4,8 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, X, Search, UserPlus, RotateCcw } from 'lucide-react';
-import type { Table, Customer, Order, OrderItem } from '@/lib/types';
+import { Plus, X, Search, UserPlus, RotateCcw, Pencil, Trash2 } from 'lucide-react';
+import type { Table, Hall, Customer, Order, OrderItem } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
 import { useRestrictBusinessType } from '@/components/layout/AuthGuard';
 import { countryName } from '@/lib/countries';
@@ -13,6 +13,7 @@ import { parsePhone, dialCodeFor } from '@/lib/phone';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { ORDER_STATUS_LABEL_KEYS, ITEM_STATUS_LABEL_KEYS, TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
+import { toastApiError } from '@/lib/api-error';
 
 const statusColors: Record<string, string> = {
   available: 'bg-green-500',
@@ -202,12 +203,25 @@ export default function TablesPage() {
   const allowed = useRestrictBusinessType('restaurant', '/pos');
   const tTables = useTranslations('tables');
   const tOrders = useTranslations('orders');
+  const tableErrorT = (key: string) => {
+    if (key === 'apiError.table_number_exists_in_hall') return tTables('tableNumberExistsInHall');
+    if (key === 'apiError.table_number_inactive_in_hall') return tTables('tableNumberInactiveInHall');
+    if (key === 'apiError.table_number_exists_in_target_hall') return tTables('hallReassignNumberConflict');
+    return key;
+  };
   const [tables, setTables] = useState<Table[]>([]);
+  const [halls, setHalls] = useState<Hall[]>([]);
+  const [selectedHallId, setSelectedHallId] = useState<string | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showHallForm, setShowHallForm] = useState(false);
+  const [editingHall, setEditingHall] = useState<Hall | null>(null);
+  const [deletingHall, setDeletingHall] = useState<Hall | null>(null);
+  const [reassignHallId, setReassignHallId] = useState('');
+  const [hallName, setHallName] = useState('');
   const [reservingTable, setReservingTable] = useState<Table | null>(null);
-  const [form, setForm] = useState({ name: '', capacity: '4', floor: 'Ground', section: '' });
+  const [form, setForm] = useState({ name: '', capacity: '4', hall_id: '' });
   const [showDetails, setShowDetails] = useState(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('tables_showDetails');
@@ -224,8 +238,17 @@ export default function TablesPage() {
 
   const fetchTables = async () => {
     try {
-      const { data } = await api.get('/tables');
-      setTables(data.tables || []);
+      const [tablesRes, hallsRes] = await Promise.all([
+        api.get('/tables'),
+        api.get('/halls'),
+      ]);
+      const nextHalls: Hall[] = hallsRes.data.halls || [];
+      setTables(tablesRes.data.tables || []);
+      setHalls(nextHalls);
+      setSelectedHallId((current) => {
+        if (current && nextHalls.some((hall) => hall.id === current)) return current;
+        return nextHalls[0]?.id ?? null;
+      });
     } catch {
       toast.error(tTables('loadFailed'));
     } finally {
@@ -234,11 +257,27 @@ export default function TablesPage() {
   };
 
   useEffect(() => {
+    let initial = true;
     const load = () => {
-      api.get('/tables')
-        .then(({ data }) => setTables(data.tables || []))
-        .catch(() => toast.error(tTables('loadFailed')))
-        .finally(() => setLoading(false));
+      Promise.all([api.get('/tables'), api.get('/halls')])
+        .then(([tablesRes, hallsRes]) => {
+          const nextHalls: Hall[] = hallsRes.data.halls || [];
+          setTables(tablesRes.data.tables || []);
+          setHalls(nextHalls);
+          setSelectedHallId((current) => {
+            if (current && nextHalls.some((hall) => hall.id === current)) return current;
+            return nextHalls[0]?.id ?? null;
+          });
+        })
+        .catch(() => {
+          // Interval polls should stay quiet when the floor is already on screen
+          // (same pattern as order details below) so a blip doesn't cover the header.
+          if (initial) toast.error(tTables('loadFailed'));
+        })
+        .finally(() => {
+          initial = false;
+          setLoading(false);
+        });
     };
     load();
     const interval = setInterval(load, 10000);
@@ -287,12 +326,56 @@ export default function TablesPage() {
       await api.post('/tables', { ...form, capacity: Number(form.capacity) });
       toast.success(tTables('tableCreated'));
       setShowForm(false);
-      setForm({ name: '', capacity: '4', floor: 'Ground', section: '' });
+      setForm({ name: '', capacity: '4', hall_id: selectedHallId || halls[0]?.id || '' });
       fetchTables();
-    } catch {
-      toast.error(tTables('tableCreateFailed'));
+    } catch (err) {
+      toastApiError(err, tTables('tableCreateFailed'), tableErrorT);
     }
   };
+
+  const handleSaveHall = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = hallName.trim();
+    if (!name) {
+      toast.error(tTables('hallNameRequired'));
+      return;
+    }
+    try {
+      if (editingHall) {
+        await api.put(`/halls/${editingHall.id}`, { name });
+        toast.success(tTables('hallRenamed'));
+      } else {
+        await api.post('/halls', { name });
+        toast.success(tTables('hallCreated'));
+      }
+      setShowHallForm(false);
+      setEditingHall(null);
+      setHallName('');
+      fetchTables();
+    } catch {
+      toast.error(editingHall ? tTables('hallRenameFailed') : tTables('hallCreateFailed'));
+    }
+  };
+
+  const handleDeleteHall = async () => {
+    if (!deletingHall) return;
+    const tableCount = Number(deletingHall.table_count || 0);
+    try {
+      await api.delete(`/halls/${deletingHall.id}`, {
+        data: tableCount > 0 ? { reassign_to_hall_id: reassignHallId } : {},
+      });
+      toast.success(tTables('hallDeleted'));
+      setDeletingHall(null);
+      setReassignHallId('');
+      fetchTables();
+    } catch (err) {
+      toastApiError(err, tTables('hallDeleteFailed'), tableErrorT);
+    }
+  };
+
+  const visibleTables = selectedHallId
+    ? tables.filter((table) => table.hall_id === selectedHallId || (!table.hall_id && halls.find((hall) => hall.id === selectedHallId)?.is_default))
+    : tables;
 
   const updateStatus = async (id: string, status: string) => {
     try {
@@ -323,28 +406,77 @@ export default function TablesPage() {
   }
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-foreground">{tTables('title')}</h1>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+    <div className="min-w-0">
+      <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-start sm:justify-between">
+        <h1 className="text-2xl font-bold text-foreground shrink-0">{tTables('title')}</h1>
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+          <label className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
             <input
               type="checkbox"
               checked={showDetails}
               onChange={toggleDetails}
-              className="w-4 h-4 rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
+              className="w-4 h-4 shrink-0 rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
             />
-            {tTables('showOrderDetails')}
+            <span className="leading-snug">{tTables('showOrderDetails')}</span>
           </label>
-          <Button onClick={() => setShowForm(true)}>
-            <Plus size={16} className="me-1" /> {tTables('addTable')}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" onClick={() => { setEditingHall(null); setHallName(''); setShowHallForm(true); }}>
+              <Plus size={16} className="me-1" /> {tTables('addHall')}
+            </Button>
+            <Button onClick={() => { setForm({ name: '', capacity: '4', hall_id: selectedHallId || halls[0]?.id || '' }); setShowForm(true); }}>
+              <Plus size={16} className="me-1" /> {tTables('addTable')}
+            </Button>
+          </div>
         </div>
       </div>
 
+      {halls.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {halls.map((hall) => {
+            const selected = hall.id === selectedHallId;
+            return (
+              <div key={hall.id} className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setSelectedHallId(hall.id)}
+                  className={`h-9 shrink-0 rounded-full px-3 text-sm font-medium ${
+                    selected ? 'bg-brand text-white' : 'bg-muted text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {hall.name}
+                </button>
+                {selected && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => { setEditingHall(hall); setHallName(hall.name); setShowHallForm(true); }}
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                      aria-label={tTables('renameHall')}
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeletingHall(hall);
+                        setReassignHallId(halls.find((item) => item.id !== hall.id)?.id || '');
+                      }}
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-red-50 hover:text-red-600"
+                      aria-label={tTables('deleteHall')}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {showDetails ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {tables.map((table) => {
+          {visibleTables.map((table) => {
             const tableOrders = ordersByTable.get(table.id) || [];
             const hasOrders = tableOrders.length > 0;
 
@@ -354,13 +486,13 @@ export default function TablesPage() {
                   hasOrders ? 'border-s-4 border-s-brand' : ''
                 } ${!table.is_active ? 'opacity-60' : ''}`}>
                 {/* Table header */}
-                <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-3 h-3 rounded-full ${statusColors[table.status]}`} />
-                    <h3 className="font-bold text-foreground">{table.name}</h3>
-                    <span className="text-xs text-gray-400">· {tTables('capacitySeats', { count: table.capacity })}</span>
+                <div className="px-3 py-3 sm:px-4 border-b border-border flex items-center justify-between gap-2 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className={`w-3 h-3 shrink-0 rounded-full ${statusColors[table.status]}`} />
+                    <h3 className="font-bold text-foreground truncate">{table.name}</h3>
+                    <span className="text-xs text-gray-400 shrink-0">· {tTables('capacitySeats', { count: table.capacity })}</span>
                   </div>
-                  <span className="text-xs text-gray-400">{tTables(TABLE_STATUS_LABEL_KEYS[table.status])}</span>
+                  <span className="text-xs text-gray-400 shrink-0">{tTables(TABLE_STATUS_LABEL_KEYS[table.status])}</span>
                 </div>
 
                 {/* Orders section */}
@@ -406,7 +538,7 @@ export default function TablesPage() {
                 )}
 
                 {/* Actions */}
-                <div className="px-4 py-2 border-t border-border flex justify-end gap-2">
+                <div className="px-3 py-2 sm:px-4 border-t border-border flex flex-wrap justify-end gap-2">
                   {(table.status === 'occupied' || table.status === 'reserved' || table.status === 'precheck') && (
                     <button onClick={() => updateStatus(table.id, 'available')}
                       className="text-xs text-brand hover:text-brand-hover font-medium">
@@ -430,14 +562,14 @@ export default function TablesPage() {
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          {tables.map((table) => (
+          {visibleTables.map((table) => (
             <div key={table.id}
               className={`bg-card rounded-xl p-5 border border-border text-center hover:shadow-md transition-shadow ${!table.is_active ? 'opacity-60' : ''}`}>
               <div className={`w-3 h-3 rounded-full ${statusColors[table.status]} mx-auto mb-3`} />
               <h3 className="font-bold text-lg text-foreground">{table.name}</h3>
               <p className="text-sm text-muted-foreground">{tTables('capacitySeats', { count: table.capacity })}</p>
               <p className="text-xs text-gray-400 mt-1">{tTables(TABLE_STATUS_LABEL_KEYS[table.status])}</p>
-              {table.floor && <p className="text-xs text-gray-400">{table.floor}</p>}
+              {table.hall_name && <p className="text-xs text-gray-400">{table.hall_name}</p>}
               {table.status === 'reserved' && table.reservation_customer_name && (
                 <p className="text-xs text-yellow-700 font-medium mt-1 truncate">{table.reservation_customer_name}</p>
               )}
@@ -466,8 +598,8 @@ export default function TablesPage() {
         </div>
       )}
 
-      {tables.length === 0 && (
-        <p className="text-center text-muted-foreground py-12">{tTables('noTablesYet')}</p>
+      {visibleTables.length === 0 && (
+        <p className="text-center text-muted-foreground py-12">{tables.length === 0 ? tTables('noTablesYet') : tTables('noTablesInHall')}</p>
       )}
 
       {/* Reserve Modal */}
@@ -500,13 +632,86 @@ export default function TablesPage() {
                     className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">{tTables('floor')}</label>
-                  <input type="text" value={form.floor} onChange={(e) => setForm({ ...form, floor: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                  <label className="block text-sm font-medium text-foreground mb-1">{tTables('hall')}</label>
+                  <select
+                    value={form.hall_id}
+                    onChange={(e) => setForm({ ...form, hall_id: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
+                    required
+                  >
+                    {halls.map((hall) => (
+                      <option key={hall.id} value={hall.id}>{hall.name}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <Button type="submit" className="w-full">{tTables('createTable')}</Button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showHallForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-sm">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold">{editingHall ? tTables('renameHall') : tTables('addHall')}</h2>
+              <button onClick={() => { setShowHallForm(false); setEditingHall(null); }} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
+            </div>
+            <form onSubmit={handleSaveHall} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">{tTables('hallName')}</label>
+                <input
+                  type="text"
+                  value={hallName}
+                  onChange={(e) => setHallName(e.target.value)}
+                  placeholder={tTables('hallNamePlaceholder')}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                  required
+                />
+              </div>
+              <Button type="submit" className="w-full">{editingHall ? tTables('saveHall') : tTables('createHall')}</Button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {deletingHall && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-sm">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold">{tTables('deleteHall')}</h2>
+              <button onClick={() => setDeletingHall(null)} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
+            </div>
+            {Number(deletingHall.table_count || 0) > 0 ? (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">{tTables('hallNotEmptyHint', { count: Number(deletingHall.table_count || 0) })}</p>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">{tTables('moveTablesTo')}</label>
+                  <select
+                    value={reassignHallId}
+                    onChange={(e) => setReassignHallId(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
+                  >
+                    {halls.filter((hall) => hall.id !== deletingHall.id).map((hall) => (
+                      <option key={hall.id} value={hall.id}>{hall.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setDeletingHall(null)} className="flex-1">{tTables('cancel')}</Button>
+                  <Button onClick={handleDeleteHall} disabled={!reassignHallId} className="flex-1">{tTables('reassignAndDelete')}</Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">{tTables('deleteHallConfirm', { name: deletingHall.name })}</p>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setDeletingHall(null)} className="flex-1">{tTables('cancel')}</Button>
+                  <Button onClick={handleDeleteHall} className="flex-1">{tTables('deleteHall')}</Button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -22,6 +22,7 @@ import { ORDER_TYPE_LABEL_KEYS, type OrderType } from '@/lib/order-types';
 import { useTranslations } from 'use-intl';
 import { useConfirm } from '@/hooks/use-confirm';
 import { Ltr } from '@/components/layout/Ltr';
+import { tableDisplayName } from '@shared/table-label';
 
 export interface KdsKanbanBoardProps {
   orders: KdsOrder[];
@@ -227,7 +228,7 @@ function KanbanOrderCard({
                 : order.type}
             </Badge>
             {order.table?.name && (
-              <Badge variant="secondary">{t('tableLabel', { name: order.table.name })}</Badge>
+              <Badge variant="secondary">{t('tableLabel', { name: tableDisplayName(order.table.name, order.table.hall_name) })}</Badge>
             )}
           </div>
           <div className="flex items-center gap-1 text-sm text-gray-400 font-mono shrink-0">
@@ -307,7 +308,7 @@ function VoidedColumn({
             <div className="flex items-center gap-1.5 min-w-0 flex-wrap mb-2">
               <Ltr as="span" className="font-bold text-sm shrink-0">#{order.order_number}</Ltr>
               {order.table?.name && (
-                <Badge variant="secondary">{t('tableLabel', { name: order.table.name })}</Badge>
+                <Badge variant="secondary">{t('tableLabel', { name: tableDisplayName(order.table.name, order.table.hall_name) })}</Badge>
               )}
             </div>
             <div className="space-y-1">

@@ -65,6 +65,206 @@ body {
   touch-action: manipulation;
 }
 
+/* Horizontal chip/hall rows: pan-x only so they do not steal vertical page pans. */
+.flo-h-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Desktop POS/waiter: one inner vertical scroller inside a locked-height shell. */
+.flo-primary-scroll {
+  min-height: 0;
+  flex: 1 1 0%;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  overscroll-behavior-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/*
+ * Phone (matches Tailwind md / mobile POS chrome): nested overflow-y:auto inside
+ * h-screen/h-dvh + overflow-hidden ancestors traps iOS at scrollTop max — the
+ * reverse pan is claimed by a parent that cannot scroll. Use the document
+ * scroller instead: unlock the height chain and do not create a second scroller.
+ */
+@media (max-width: 767px) {
+  html:has(.flo-phone-page-scroll) {
+    height: auto;
+    overflow-x: clip;
+    overflow-y: auto;
+    overscroll-behavior-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  html:has(.flo-phone-page-scroll) body {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .flo-phone-page-scroll {
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    flex: none !important;
+  }
+
+  /*
+   * Do not stretch the dish grid to leftover viewport height. iOS resolves
+   * aspect-ratio tiles against that block size and each card becomes ~100dvh.
+   */
+  .flo-primary-scroll {
+    flex: none;
+    min-height: auto;
+    height: auto;
+    overflow: visible;
+    touch-action: auto;
+    -webkit-overflow-scrolling: auto;
+  }
+}
+
+/*
+ * Compact waiter POS tiles — never full-width color banners.
+ * max-height alone + width:100% turns 2-col landscape cells into fat stripes
+ * (aspect-ratio loses to max-height). Cap BOTH axes on the color/image block.
+ */
+.pos-dish-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 0.5rem !important;
+  align-content: start !important;
+  align-items: start !important;
+  grid-auto-rows: max-content !important;
+  width: 100%;
+}
+
+.pos-dish-card {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  width: 100% !important;
+  max-width: 100%;
+  height: auto !important;
+  min-height: 2.75rem;
+  min-width: 0 !important;
+  align-self: start !important;
+  flex: none !important;
+}
+
+.pos-dish-card-media {
+  width: 72px !important;
+  height: 72px !important;
+  max-width: 72px !important;
+  max-height: 72px !important;
+  aspect-ratio: 1 / 1 !important;
+  flex: none !important;
+  overflow: hidden;
+}
+
+.pos-dish-card-media img {
+  width: 100% !important;
+  height: 100% !important;
+  max-height: 72px !important;
+  object-fit: cover !important;
+}
+
+.pos-dish-card-body {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* Landscape phones / wide small screens: more columns of the same 72px squares. */
+@media (orientation: landscape), (min-width: 600px) {
+  .pos-dish-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 0.375rem !important;
+  }
+}
+
+/*
+ * Short landscape (waiter phone rotated): list rows instead of a 2-col banner
+ * grid. 48px swatch + name + ₸, never a half-screen color bar.
+ */
+@media (orientation: landscape) and (max-height: 500px) {
+  .pos-dish-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.375rem !important;
+  }
+
+  .pos-dish-card {
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+    padding-block: 0.375rem !important;
+  }
+
+  .pos-dish-card-media {
+    width: 48px !important;
+    height: 48px !important;
+    max-width: 48px !important;
+    max-height: 48px !important;
+    margin-bottom: 0 !important;
+  }
+
+  .pos-dish-card-media img {
+    max-height: 48px !important;
+  }
+}
+
+@media (min-width: 768px) {
+  .pos-dish-grid[data-sidebar='open'] {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 0.75rem !important;
+  }
+
+  .pos-dish-grid[data-sidebar='closed'] {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 0.75rem !important;
+  }
+
+  .pos-dish-card {
+    flex-direction: column !important;
+  }
+
+  .pos-dish-card-media {
+    width: 96px !important;
+    height: 96px !important;
+    max-width: 96px !important;
+    max-height: 96px !important;
+  }
+
+  .pos-dish-card-media img {
+    max-height: 96px !important;
+  }
+}
+
+@media (min-width: 1024px) {
+  .pos-dish-grid[data-sidebar='open'] {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+
+  .pos-dish-grid[data-sidebar='closed'] {
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  }
+
+  .pos-dish-card-media {
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    max-height: 8rem !important;
+    aspect-ratio: 4 / 3;
+  }
+
+  .pos-dish-card-media img {
+    max-height: 8rem !important;
+  }
+}
+
 /* Desktop title bar: native-overlay mode supplies the caption buttons through
  * Electron; html-fallback mode mounts equivalent controls in the renderer.
  * The safe-area env values exclude native buttons and update on geometrychange;
@@ -207,7 +407,19 @@ html[data-flo-desktop-titlebar='true'] {
   font-size: 13.5px !important;
   font-weight: 500 !important;
   line-height: 1.4 !important;
-  max-width: 380px !important;
+  max-width: min(380px, calc(100vw - 24px)) !important;
+}
+
+/* Phone chrome (hamburger + workspace tabs) sits under the default 16px
+ * toast inset; keep toasts below that bar and inside the viewport. */
+@media (max-width: 640px) {
+  .flo-toaster {
+    /* Title bar is hidden below md; offset past hamburger + workspace tabs. */
+    top: calc(env(safe-area-inset-top, 0px) + 5.75rem) !important;
+    inset-inline: 12px !important;
+    left: 12px !important;
+    right: 12px !important;
+  }
 }
 
 .dark .flo-toast-card {

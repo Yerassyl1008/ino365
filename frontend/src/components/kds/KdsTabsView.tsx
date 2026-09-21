@@ -16,6 +16,7 @@ import {
 import { ORDER_TYPE_LABEL_KEYS, type OrderType } from '@/lib/order-types';
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
+import { tableDisplayName } from '@shared/table-label';
 
 export interface KdsTabsViewProps {
   orders: KdsOrder[];
@@ -96,7 +97,7 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
                       : order.type}
                   </Badge>
                   {order.table?.name && (
-                    <Badge variant="secondary">{t('tableLabel', { name: order.table.name })}</Badge>
+                    <Badge variant="secondary">{t('tableLabel', { name: tableDisplayName(order.table.name, order.table.hall_name) })}</Badge>
                   )}
                 </div>
                 <div className="flex items-center gap-1 text-sm text-gray-400 font-mono shrink-0">

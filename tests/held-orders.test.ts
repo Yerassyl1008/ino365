@@ -239,6 +239,42 @@ async function main() {
     assert(!JSON.stringify(malformedRes.data).includes('JSON'), 'Parser details are not exposed');
     console.log('  ✓ Malformed held orders are isolated');
 
+    console.log('\n─── Scenario G: POS cart-v2 catalog line ids can be held ───');
+    const catalogTableId = 'tbl-cart-v2';
+    seedTable(db, catalogTableId, 4);
+    const cartV2Id = 'cart-v2:{"addons":[],"course":number:1,"guestSeat":number:1,"productId":string:"prod-express-shashlik-kuskovoy","specialInstructions":string:""}';
+    assert(cartV2Id.length > 128, 'Fixture cart line id exceeds the old 128-char identifier cap');
+    const catalogHold = await api(baseUrl, '/api/held-orders', {
+      method: 'POST',
+      body: {
+        tableId: catalogTableId,
+        items: [{
+          id: cartV2Id,
+          product: { id: 'prod-express-shashlik-kuskovoy', name: 'Kuskovoy', price: 620 },
+          quantity: 2,
+          addons: [],
+          special_instructions: '',
+        }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(catalogHold.status, 200, 'POST /held-orders accepts cart-v2 catalog line ids');
+    const tooLongId = await api(baseUrl, '/api/held-orders', {
+      method: 'POST',
+      body: {
+        tableId: catalogTableId,
+        items: [{
+          id: 'x'.repeat(4097),
+          product: { id: 'prod-express-shashlik-kuskovoy', name: 'Kuskovoy', price: 620 },
+          quantity: 1,
+          addons: [],
+        }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(tooLongId.status, 400, 'POST /held-orders still rejects oversized cart line ids');
+    console.log('  ✓ POS cart line identities can be held');
+
     console.log('\n✅ All held orders tests passed');
   } finally {
     server.close();

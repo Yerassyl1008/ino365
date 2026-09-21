@@ -1,0 +1,27 @@
+[Unit]
+Description=KorgenKassa POS (VPS, no Electron)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=flocafe
+Group=flocafe
+WorkingDirectory=/opt/flocafe
+Environment=NODE_ENV=production
+Environment=FLO_DATA_DIR=/var/lib/flocafe
+Environment=FLO_TRUST_PROXY=1
+Environment=PORT=3001
+Environment=KDS_PORT=3002
+Environment=SERVER_APP_PORT=3003
+# Optional: extra CORS origins if waiter and kassa use different HTTPS hosts
+# Environment=FLO_PUBLIC_ORIGINS=https://kassa.example.kz,https://waiter.example.kz
+# Environment=FLO_WAITER_PUBLIC_URL=https://waiter.example.kz
+EnvironmentFile=-/opt/flocafe/.env
+ExecStart=/usr/bin/node /opt/flocafe/scripts/vps-server.cjs
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

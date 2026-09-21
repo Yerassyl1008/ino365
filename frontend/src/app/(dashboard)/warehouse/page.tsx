@@ -10,9 +10,10 @@ import type { Ingredient, IngredientUnit, StockMovement, WarehouseProductRecipe 
 import { useTranslations, type AppConfig } from 'use-intl';
 import { useConfirm } from '@/hooks/use-confirm';
 import RecipeEditor, { type RecipeLineDraft, unitLabel } from '@/components/warehouse/RecipeEditor';
+import StockCountList from '@/components/warehouse/StockCountList';
 import { useRestrictBusinessType } from '@/components/layout/AuthGuard';
 
-type Tab = 'ingredients' | 'recipes' | 'movements';
+type Tab = 'ingredients' | 'recipes' | 'movements' | 'count';
 type WarehouseKey = keyof AppConfig['Messages']['warehouse'];
 type StockAction = 'receive' | 'waste' | 'count';
 
@@ -36,7 +37,7 @@ export default function WarehousePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
-  const tab: Tab = tabParam === 'recipes' || tabParam === 'movements' || tabParam === 'ingredients'
+  const tab: Tab = tabParam === 'recipes' || tabParam === 'movements' || tabParam === 'ingredients' || tabParam === 'count'
     ? tabParam
     : 'ingredients';
 
@@ -63,12 +64,17 @@ export default function WarehousePage() {
   const [recipeProduct, setRecipeProduct] = useState<WarehouseProductRecipe | null>(null);
   const [recipeLines, setRecipeLines] = useState<RecipeLineDraft[]>([]);
   const [seeding, setSeeding] = useState(false);
+  const [warehouseEnabled, setWarehouseEnabled] = useState(true);
+  const [savingWarehouse, setSavingWarehouse] = useState(false);
 
   const lowStock = ingredients.filter((ingredient) => ingredient.is_active && ingredient.is_low);
 
   const loadIngredients = async () => {
     const { data } = await api.get('/warehouse/ingredients');
     setIngredients(data.ingredients || []);
+    if (typeof data.warehouse_enabled === 'boolean') {
+      setWarehouseEnabled(data.warehouse_enabled);
+    }
   };
 
   const loadRecipes = async () => {
@@ -202,6 +208,21 @@ export default function WarehousePage() {
     }
   };
 
+  const saveWarehouseEnabled = async (enabled: boolean) => {
+    const previous = warehouseEnabled;
+    setWarehouseEnabled(enabled);
+    setSavingWarehouse(true);
+    try {
+      await api.put('/settings/kitchen_warehouse_enabled', { value: enabled ? 'true' : 'false' });
+      toast.success(enabled ? t('trackingOn') : t('trackingOff'));
+    } catch {
+      setWarehouseEnabled(previous);
+      toast.error(t('saveFailed'));
+    } finally {
+      setSavingWarehouse(false);
+    }
+  };
+
   const seedMenu = async () => {
     const ok = await confirm(t('seedMenuHint'), { title: t('seedConfirmTitle') });
     if (!ok) return;
@@ -219,6 +240,7 @@ export default function WarehousePage() {
 
   const tabs: Array<{ id: Tab; label: WarehouseKey }> = [
     { id: 'ingredients', label: 'tabIngredients' },
+    { id: 'count', label: 'tabCount' },
     { id: 'recipes', label: 'tabRecipes' },
     { id: 'movements', label: 'tabMovements' },
   ];
@@ -240,15 +262,47 @@ export default function WarehousePage() {
             {t('seedMenu')}
           </Button>
           {tab === 'ingredients' && (
-            <Button onClick={() => { resetForm(); setShowForm(true); }}>
-              <Plus size={16} className="me-1" />
-              {t('newIngredient')}
-            </Button>
+            <>
+              {ingredients.some((ingredient) => ingredient.is_active) && (
+                <Button variant="outline" onClick={() => setTab('count')}>
+                  {t('tabCount')}
+                </Button>
+              )}
+              <Button onClick={() => { resetForm(); setShowForm(true); }}>
+                <Plus size={16} className="me-1" />
+                {t('newIngredient')}
+              </Button>
+            </>
           )}
         </div>
       </div>
 
-      {lowStock.length > 0 && (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">{t('trackingToggle')}</p>
+          <p className="text-xs text-muted-foreground">
+            {warehouseEnabled ? t('trackingHintOn') : t('trackingHintOff')}
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={warehouseEnabled}
+          disabled={savingWarehouse}
+          onClick={() => { if (!savingWarehouse) void saveWarehouseEnabled(!warehouseEnabled); }}
+          className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${warehouseEnabled ? 'bg-brand' : 'bg-gray-300'}`}
+        >
+          <span className={`absolute top-0.5 start-0.5 w-5 h-5 bg-card rounded-full shadow transition-transform ${warehouseEnabled ? 'translate-x-5 rtl:-translate-x-5' : 'translate-x-0'}`} />
+        </button>
+      </div>
+
+      {!warehouseEnabled && (
+        <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          <span>{t('trackingOffBanner')}</span>
+        </div>
+      )}
+
+      {warehouseEnabled && lowStock.length > 0 && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
           <span>{t('lowStockBanner', { count: lowStock.length })}</span>
@@ -324,6 +378,8 @@ export default function WarehousePage() {
             </table>
           </div>
         )
+      ) : tab === 'count' ? (
+        <StockCountList ingredients={ingredients} onSaved={async () => { await Promise.all([loadIngredients(), loadMovements()]); }} />
       ) : tab === 'recipes' ? (
         recipes.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('emptyRecipes')}</p>

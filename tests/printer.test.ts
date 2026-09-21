@@ -518,14 +518,43 @@ console.log('\n✅ Test 1b3: Native PC866 Cyrillic stays sharp (not skipped, not
   const buf = buildEscPos(['{INIT}', '{CENTER}ИТОГО{/CENTER}', 'Капучино     180.00', 'ЖИЫНТЫҚ', '{CUT}'], false, { language: 'ru' }, warnings);
   const text = escPosToText(buf);
   assert('selects PC866 after INIT', bytesContain(buf, [ESC, 0x74, 17]));
+  assert('cancels Kanji/GBK before PC866', bytesContain(buf, [0x1C, 0x2E]));
   assert('emits native Cyrillic ИТОГО', text.includes('ИТОГО'));
   assert('emits native Cyrillic item name', text.includes('Капучино'));
   assert('does not romanize ИТОГО to ITOGO', !text.includes('ITOGO'));
   assert('Kazakh extra Қ folds to Q so the line still prints', text.includes('ЖИЫНТЫQ'));
   assert('Cyrillic lines emit no skip warning', warnings.length === 0);
+  // UTF-8 for Ш is D0 A8; CP866 Ш is 0x98. GBK would show UTF-8 as Chinese.
+  const shashlyk = buildEscPos(['{INIT}', '{DOUBLE_HEIGHT}{BOLD}1x  Шашлык{/BOLD}{/DOUBLE_HEIGHT}', 'Суши     1500₸', 'Счёт № 42', '{CUT}'], false, { language: 'ru' });
+  const shashlykText = escPosToText(shashlyk);
+  assert('KOT-style item prints Шашлык', shashlykText.includes('Шашлык'));
+  assert('Суши still prints', shashlykText.includes('Суши'));
+  assert('tenge sign folds instead of skipping the line', shashlykText.includes('тг') || shashlykText.includes('1500'));
+  assert('numero sign does not drop the bill line', shashlykText.includes('42') && shashlykText.includes('Счёт'));
+  assert('Шашлык is PC866 0x98, not UTF-8 D0 A8', bytesContain(shashlyk, [0x98]) && !bytesContain(shashlyk, [0xD0, 0xA8]));
+  assert('re-selects PC866 after double-height', bytesContain(shashlyk, [ESC, 0x21, 0x18]) && bytesContain(shashlyk, [ESC, 0x74, 17]));
 
   const asciiBuf = buildEscPos(['{INIT}', 'TOTAL        100.00', '{CUT}']);
   assert('ASCII receipts do not switch to PC866', !bytesContain(asciiBuf, [ESC, 0x74, 17]));
+
+  const ruKotWarnings: Array<{ field: string; text: string; message: string }> = [];
+  const ruKot = formatKOT(
+    { order_number: '42', type: 'dine_in', created_at: new Date('2026-04-21T10:30:00Z').toISOString(), table: { name: '3' } },
+    [{ product_name: 'Шашлык', quantity: 1, addons: [], special_instructions: null }],
+    'Кухня',
+    42,
+    false,
+    'full',
+    'ru-RU',
+    undefined,
+    ruKotWarnings,
+    false,
+    'ru',
+  );
+  const ruKotText = escPosToText(ruKot);
+  assert('Russian KOT prints Шашлык, not an empty ticket', ruKotText.includes('Шашлык'));
+  assert('Russian KOT prints station', ruKotText.includes('Кухня'));
+  assert('Russian KOT has no skip warnings for Cyrillic', ruKotWarnings.length === 0);
 
   const { warnings: feWarnings, unicode: feUnicode, webPrint } = loadFrontendPrinterModules();
   const cyrEnc: any = { out: [] as string[], codepages: [] as string[], text(v: string) { this.out.push(v); return this; }, codepage(name: string) { this.codepages.push(name); return this; } };
@@ -535,6 +564,22 @@ console.log('\n✅ Test 1b3: Native PC866 Cyrillic stays sharp (not skipped, not
   assert('frontend selects cp866 for Cyrillic', cyrEnc.codepages.includes('cp866'));
   assert('frontend keeps ИТОГО instead of ITOGO', feUnicode.foldThermalText('ru', 'ИТОГО') === 'ИТОГО');
   assert('frontend folds leftover Kazakh letter', feUnicode.foldThermalText('kk', 'ЖИЫНТЫҚ') === 'ЖИЫНТЫQ');
+  assert('frontend folds numero sign so the line is printable', feUnicode.foldThermalText('ru', 'Счёт №') === 'Счёт N');
+  assert('frontend folds tenge sign', feUnicode.foldThermalText('ru', '1500₸') === '1500тг');
+
+  const rawEnc: any = {
+    out: [] as Uint8Array[],
+    codepages: [] as string[],
+    text(v: string) { this.out.push(v); return this; },
+    codepage(name: string) { this.codepages.push(name); return this; },
+    raw(data: Uint8Array) { this.out.push(data); return this; },
+  };
+  const rawWarnings: any[] = [];
+  feWarnings.safePrinterText(rawEnc, 'Шашлык', rawWarnings, false, false, undefined, undefined, 'ru');
+  const rawBytes = rawEnc.out[0] as Uint8Array;
+  assert('frontend raw path emits FS . and ESC t 17', rawBytes[0] === 0x1C && rawBytes[1] === 0x2E && rawBytes[2] === ESC && rawBytes[3] === 0x74 && rawBytes[4] === 17);
+  assert('frontend raw path encodes Шашлык as PC866, not UTF-8', Array.from(rawBytes).includes(0x98) && !bytesContain(Buffer.from(rawBytes), [0xD0, 0xA8]));
+  assert('frontend raw path has no skip warning', rawWarnings.length === 0);
 
   const html58 = webPrint.generateBillHtml(
     { id: 1, bill_number: 'B-1', subtotal: 100, tax_amount: 0, discount_amount: 0, total: 100, created_at: new Date().toISOString(), items: [], order: { items: [] } } as any,

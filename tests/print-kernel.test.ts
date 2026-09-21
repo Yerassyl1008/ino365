@@ -21,6 +21,7 @@ import {
   decodeCp866,
   defaultPrintLanguagePolicy,
   encodeCp866,
+  foldForCp866Printer,
   foldUnsupportedCyrillic,
   isCp866Encodable,
   isLtrIsland,
@@ -255,6 +256,9 @@ console.log('Testing PC866 Cyrillic encoding...');
   assert.equal(isCp866Encodable('Қазақ'), false);
   assert.equal(foldUnsupportedCyrillic('ЖИЫНТЫҚ'), 'ЖИЫНТЫQ');
   assert.equal(foldUnsupportedCyrillic('ИТОГО'), 'ИТОГО');
+  assert.equal(foldForCp866Printer('Счёт №'), 'Счёт N');
+  assert.equal(foldForCp866Printer('Шашлык 1500₸'), 'Шашлык 1500тг');
+  assert.equal(isCp866Encodable(foldForCp866Printer('Заказ №12 · Шашлык')), true);
 }
 console.log('✓ PC866 encode/decode and leftover Cyrillic folding');
 

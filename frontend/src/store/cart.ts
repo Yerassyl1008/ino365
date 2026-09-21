@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Customer, Product, Addon, CartItem } from '@/lib/types';
 import { generateCartItemId, normalizeCartItems } from '@/lib/cart-identity';
+import { catalogLineDiscount } from '@shared/dish-discount';
 
 export { generateCartItemId, normalizeCartItems } from '@/lib/cart-identity';
 
@@ -167,11 +168,15 @@ export const useCartStore = create<CartState>((set, get) => ({
   setOrderNotes: (notes) => set({ orderNotes: notes }),
 
   subtotal: () => {
+    const orderType = get().orderType;
     return get().items.reduce((sum, item) => {
       const itemPrice = Number(item.product?.price) || 0;
       const itemQty = Number(item.quantity) || 1;
-      const addonTotal = (item.addons || []).reduce((a, addon) => a + (Number(addon.price) || 0) * (Number(addon.quantity) || 1), 0);
-      return sum + (itemPrice + addonTotal) * itemQty;
+      const addonUnit = (item.addons || []).reduce((a, addon) => a + (Number(addon.price) || 0) * (Number(addon.quantity) || 1), 0);
+      const addonLine = addonUnit * itemQty;
+      const line = itemPrice * itemQty + addonLine;
+      const discount = catalogLineDiscount(item.product, orderType, itemPrice, itemQty, addonLine);
+      return sum + Math.max(0, line - discount);
     }, 0);
   },
 

@@ -41,8 +41,9 @@ const FLO_PATTERNS = [
   // `npm run dev` launches `electron .` from this repo. The command line is the
   // local Electron binary plus `.`, with FloCafe in the path — not --appName.
   /[\\/]FloCafe[\\/]node_modules[\\/]electron(?:[\\/]dist)?[\\/]electron(?:\.exe)?(?:$|\s)/i,
-  /(?:^|\s)(?:node|nodejs)(?:\s+\S+)*[\\/]FloCafe[\\/](?:dev-server\.js|dist[\\/](?:main[\\/])?index\.js)(?:$|\s)/i,
+  /(?:^|\s)(?:node|nodejs)(?:\s+\S+)*[\\/]FloCafe[\\/](?:dev-server\.js|scripts[\\/]vps-server\.cjs|dist[\\/](?:main[\\/])?index\.js)(?:$|\s)/i,
   /(?:^|\s)(?:node|nodejs)(?:\s+\S+)*\s+dev-server\.js(?:$|\s)/i,
+  /(?:^|\s)(?:node|nodejs)(?:\s+\S+)*\s+scripts[\\/]vps-server\.cjs(?:$|\s)/i,
 ];
 
 function isFloProcess(cmdline) {

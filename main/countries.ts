@@ -235,12 +235,59 @@ export const getCountryByCode = (code: string): Country | undefined => {
   return COUNTRIES.find((c) => c.code === code.toUpperCase());
 };
 
+const TENGE_SIGN = '\u20B8';
+const RUPEE_SIGN = '\u20B9';
+
+/**
+ * ISO code used when rendering money.
+ *
+ * FloCafe still seeds IN/INR. KorgenKassa stores (Aisultan and any KZ cafe)
+ * must never show ₹ — treat INR or an empty code as unset, then use the
+ * country profile, then KZT.
+ */
+export function resolveDisplayCurrency(countryCode?: string, currency?: string): string {
+  const code = String(currency || '').trim().toUpperCase();
+  if (code && code !== 'INR') return code;
+  const countryCurrency = getCountryByCode(String(countryCode || '').trim().toUpperCase())?.currency;
+  if (countryCurrency && countryCurrency !== 'INR') return countryCurrency;
+  return 'KZT';
+}
+
+function formatCurrencyWithSymbol(
+  amount: number,
+  currency: string,
+  locale: string,
+  extra?: Intl.NumberFormatOptions,
+): string {
+  const code = String(currency || '').trim().toUpperCase();
+  if (!code) return amount.toFixed(2);
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency: code,
+      currencyDisplay: 'narrowSymbol',
+      ...extra,
+    }).formatToParts(amount).map((part) => {
+      if (part.type !== 'currency') return part.value;
+      if (code === 'KZT') return TENGE_SIGN;
+      if (part.value === RUPEE_SIGN && code !== 'INR') return code;
+      return part.value;
+    }).join('');
+  } catch {
+    return `${code === 'KZT' ? TENGE_SIGN : currency} ${amount.toFixed(2)}`;
+  }
+}
+
 export const getCurrencySymbol = (currency: string, locale = 'en-US'): string => {
   if (!currency) return currency;
+  const code = String(currency).trim().toUpperCase();
+  if (code === 'KZT') return TENGE_SIGN;
   try {
-    return new Intl.NumberFormat(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })
+    const value = new Intl.NumberFormat(locale, { style: 'currency', currency: code, currencyDisplay: 'narrowSymbol' })
       .formatToParts(0)
       .find((p) => p.type === 'currency')?.value ?? currency;
+    if (value === RUPEE_SIGN && code !== 'INR') return code;
+    return value;
   } catch {
     return currency;
   }
@@ -282,12 +329,7 @@ const normalizePreferences = (prefs?: LocalePreferences): Required<LocalePrefere
 });
 
 export const formatCurrency = (amount: number, currency: string, locale = 'en-US'): string => {
-  if (!currency) return amount.toFixed(2);
-  try {
-    return new Intl.NumberFormat(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' }).format(amount);
-  } catch {
-    return `${currency} ${amount.toFixed(2)}`;
-  }
+  return formatCurrencyWithSymbol(amount, currency, locale);
 };
 
 /**
@@ -315,16 +357,7 @@ export const formatMoney = (
   }
 
   if (!currency) return formatNumber(amount, locale, numberingSystem);
-  try {
-    return new Intl.NumberFormat(locale, {
-      style: 'currency',
-      currency,
-      currencyDisplay: 'narrowSymbol',
-      numberingSystem,
-    }).format(amount);
-  } catch {
-    return `${currency} ${formatNumber(amount, locale, numberingSystem)}`;
-  }
+  return formatCurrencyWithSymbol(amount, currency, locale, numberingSystem ? { numberingSystem } : undefined);
 };
 
 export interface CurrencyUnitAdapter {

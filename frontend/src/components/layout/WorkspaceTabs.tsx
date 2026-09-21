@@ -7,6 +7,7 @@ import { House, X } from 'lucide-react';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { useWorkspaceTabs } from '@/store/workspace-tabs';
 import { useAuthStore } from '@/store/auth';
+import { SidebarTrigger } from '@/components/ui/sidebar';
 import { normalizeWorkspaceHref, workspaceLabelForHref } from '@/lib/workspace-nav';
 import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
 
@@ -32,10 +33,11 @@ export default function WorkspaceTabs() {
 
   return (
     <div
-      className="flex items-center gap-1 overflow-x-auto border-b border-border bg-background px-3 shrink-0"
+      className="flo-h-scroll flex items-center gap-1 border-b border-border bg-background px-2 shrink-0 min-w-0 md:px-3"
       role="tablist"
       aria-label={t('workspaceTabs')}
     >
+      <SidebarTrigger className="size-8 shrink-0 md:hidden" aria-label="Open navigation" />
       {visibleTabs.map((tab) => {
         const currentHref = normalizeWorkspaceHref(
           searchParams.toString() ? `${pathname}?${searchParams.toString()}` : (pathname || ''),

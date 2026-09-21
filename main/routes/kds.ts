@@ -6,6 +6,7 @@ import { requireRole, requireKdsEnabled, requireKdsEnabledOr404, isTokenRevoked,
 import { parseCategoryIds } from './auth';
 import { notifyKdsUpdate } from '../services/kds';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
+import { tableDisplayName } from '../../shared/table-label';
 
 const router = Router();
 
@@ -95,9 +96,10 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
       WITH active_ids AS (
         ${activeKitchenOrderIdsSql()}
       )
-      SELECT o.*, t.number as table_name, t.floor, t.section, t.kitchen_station_id
+      SELECT o.*, t.number as table_name, h.name as hall_name, t.floor, t.section, t.kitchen_station_id
       FROM orders o
       LEFT JOIN tables t ON o.table_id = t.id
+      LEFT JOIN halls h ON h.id = t.hall_id
       WHERE o.id IN active_ids
     `;
     const params: any[] = [];
@@ -165,7 +167,7 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
         .map((i) => projectKdsItem(addonsByItemId.get(i.id) || i, restrictedPayload));
       return {
         ...projectKdsOrder(order, restrictedPayload),        items: visibleItems,
-        table: order.table_name ? { name: order.table_name } : null,
+        table: order.table_name ? { name: tableDisplayName(order.table_name, order.hall_name), hall_name: order.hall_name || null } : null,
       };
     }).filter((order) => order.items.length > 0);
 
@@ -302,11 +304,12 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
     const voidedCutoff = new Date(Date.now() - KDS_VOIDED_ITEM_VISIBILITY_MS).toISOString().replace('T', ' ').replace(/\..*$/, '');
     let itemsQuery = `
       SELECT oi.*, o.id as order_id, o.order_number, o.type, o.status as order_status,
-        o.table_id, t.number as table_name, o.special_instructions as order_notes,
+        o.table_id, t.number as table_name, h.name as hall_name, o.special_instructions as order_notes,
         o.created_at as order_time
       FROM order_items oi
       JOIN orders o ON oi.order_id = o.id
       LEFT JOIN tables t ON o.table_id = t.id
+      LEFT JOIN halls h ON h.id = t.hall_id
       WHERE oi.status NOT IN ('completed', 'cancelled', 'served', 'void_adjustment', 'refunded')
         AND (oi.status != 'voided' OR oi.voided_at IS NULL OR oi.voided_at > ?)
         AND o.status != 'cancelled'
@@ -340,7 +343,7 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
           order_number: (item as any).order_number,
           table_id: restrictedPayload ? null : (item as any).table_id,
           table_name: (item as any).table_name,
-          table: (item as any).table_name ? { name: (item as any).table_name } : null,
+          table: (item as any).table_name ? { name: tableDisplayName((item as any).table_name, (item as any).hall_name), hall_name: (item as any).hall_name || null } : null,
           type: (item as any).type,
           order_status: (item as any).order_status,
           order_notes: (item as any).order_notes,

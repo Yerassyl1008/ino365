@@ -3,6 +3,7 @@ import { getDatabase, getSettingValue } from '../db';
 import { getBundledCountryPack } from '../tax-packs/bundled';
 import { getCountryByCode, type TaxIdFormat } from '../countries';
 import { computeServiceChargeAmount } from './service-charge';
+import { catalogLineDiscount } from '../../shared/dish-discount';
 
 interface TenantInfo {
   country: string;
@@ -756,15 +757,18 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       const unitPrice = parseFloat(product.price) || 0;
       const rawQty = Number(itemData.quantity);
       const quantity = Number.isFinite(rawQty) && rawQty > 0 ? rawQty : 1;
-      const rawDisc = Number(itemData.discount_amount);
-      const itemDiscount = Number.isFinite(rawDisc) && rawDisc >= 0 ? rawDisc : 0;
 
-      let subtotal = unitPrice * quantity;
+      let addonTotal = 0;
       if (itemData.addons) {
         for (const addon of itemData.addons) {
-          subtotal += (addon.price || 0) * (addon.quantity || 1) * quantity;
+          addonTotal += (addon.price || 0) * (addon.quantity || 1) * quantity;
         }
       }
+      // Catalog dish discount follows order_type. Client item.discount_amount
+      // is ignored so preview matches order create (vuln-0002).
+      const itemDiscount = catalogLineDiscount(product, order_type, unitPrice, quantity, addonTotal);
+
+      let subtotal = unitPrice * quantity + addonTotal;
       subtotal = Math.max(0, subtotal - itemDiscount);
 
       const taxResult = calculateItemTax(tenantInfo, product as Product, subtotal, customer || null);

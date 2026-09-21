@@ -51,6 +51,7 @@ export function createTestOrder(overrides?: Partial<Order>): Order {
     kitchen_station_id: 1,
     floor: 'Ground',
     section: 'Main',
+    hall_id: 'hall-1',
     is_active: true,
   };
 

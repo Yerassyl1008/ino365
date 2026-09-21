@@ -17,7 +17,6 @@ import { useTranslations } from 'use-intl';
 
 interface Props {
   onSelected?: () => void;
-  variant?: 'default' | 'topbar';
 }
 
 const TAG_COLORS: Record<string, string> = {
@@ -55,12 +54,11 @@ function TagBadges({ counts }: { counts: Record<string, number> }) {
   );
 }
 
-export default function CustomerSearch({ onSelected, variant = 'default' }: Props = {}) {
+export default function CustomerSearch({ onSelected }: Props = {}) {
   const cart = useCartStore();
   const { currentTenant } = useAuthStore();
   const enforcePhoneLength = usePosSettingsStore((s) => s.enforcePhoneLength);
   const t = useTranslations('pos');
-  const tCommon = useTranslations('common');
   const country = currentTenant?.country ?? 'IN';
   const dialCode = dialCodeFor(country);
   const [phone, setPhone] = useState('');
@@ -209,41 +207,6 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   if (customer) {
     const hasTags = customer.tag_counts && Object.keys(customer.tag_counts).length > 0;
 
-    if (variant === 'topbar') {
-      return (
-        <>
-          <div className="min-h-11 flex items-center gap-2 px-3 bg-brand-light rounded-lg min-w-0 w-full">
-            <button
-              onClick={() => setEditingCustomer(true)}
-              title={t('editCustomer')}
-              className="touch-target flex-1 min-w-0 justify-start gap-x-2 flex-wrap text-start"
-            >
-              <span className="font-semibold text-brand text-sm truncate">{customer.name}</span>
-              <span className="text-brand/70 text-xs shrink-0"><Ltr>{customer.phone}</Ltr></span>
-              <Pencil size={14} className="text-brand/60 shrink-0" />
-              {!!loyaltyPoints && loyaltyPoints > 0 && (
-                <span className="flex items-center gap-0.5 text-xs font-medium text-brand bg-card/70 rounded-full px-1.5 py-0.5 shrink-0">
-                  <Gift size={11} />
-                  {t('loyaltyPointsShort', { count: loyaltyPoints })}
-                </span>
-              )}
-              {hasTags && <TagBadges counts={customer.tag_counts!} />}
-            </button>
-            <button onClick={handleClear} className="touch-target rounded-full text-brand hover:text-brand-hover active:bg-card/60 shrink-0 ms-auto" aria-label={t('remove')}>
-              <X size={16} />
-            </button>
-          </div>
-          {editingCustomer && (
-            <EditCustomerModal
-              customer={customer}
-              onClose={() => setEditingCustomer(false)}
-              onSaved={(updated) => cart.setCustomer(updated)}
-            />
-          )}
-        </>
-      );
-    }
-
     return (
       <div className="space-y-1">
         <div className="flex items-center justify-between px-3 py-2 bg-brand-light rounded-lg text-sm">
@@ -274,74 +237,6 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
     );
   }
 
-  // ── Topbar variant ─────────────────────────────────────────────────────────
-  if (variant === 'topbar') {
-    return (
-      <div className="relative w-full min-w-0">
-        <div className="flex min-h-10 min-w-0 flex-col gap-2 sm:flex-row sm:items-center" onBlur={handleWidgetBlur}>
-
-          <input
-            type="tel"
-            inputMode="tel"
-            value={phone}
-            onChange={handlePhoneChange}
-            onKeyDown={handlePhoneKeyDown}
-            placeholder={dialCode ? `${dialCode} ${t('phone')}` : t('phone')}
-            className="h-11 w-full min-w-0 px-3 text-base sm:text-sm border border-amber-400 bg-amber-50 placeholder:text-amber-600/70 rounded-lg focus:ring-2 focus:ring-amber-200 focus:border-amber-500 outline-none sm:h-10 sm:w-40 sm:shrink-0"
-            dir="ltr"
-          />
-          <input
-            ref={nameRef}
-            type="text"
-            value={name}
-            onChange={matched ? undefined : (e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key !== 'Enter') return;
-              if (matched) handleSelectMatched();
-              else handleCreate();
-            }}
-            readOnly={!!matched}
-            placeholder={searched ? (matched ? '' : t('enterName')) : t('nameAutoFills')}
-            className={`h-11 w-full min-w-0 px-3 text-base sm:text-sm border rounded-lg focus:ring-2 outline-none transition-colors duration-150 sm:h-10 sm:flex-1 ${
-              matched
-                ? 'border-border bg-muted cursor-pointer focus:ring-brand/20 focus:border-brand'
-                : 'border-indigo-200 bg-indigo-50 placeholder:text-indigo-400/80 focus:ring-indigo-200 focus:border-indigo-400'
-            }`}
-            onClick={matched ? handleSelectMatched : undefined}
-          />
-          {matched && (
-            <button
-              onClick={handleSelectMatched}
-              className="touch-target shrink-0 px-3 bg-brand text-white text-xs rounded-lg hover:bg-brand-hover active:bg-brand-hover whitespace-nowrap"
-            >
-              {t('select')}
-            </button>
-          )}
-          {isNew && name.trim() && (
-            <button
-              onClick={handleCreate}
-              disabled={creating}
-              className="touch-target shrink-0 px-3 bg-brand text-white text-xs rounded-lg hover:bg-brand-hover active:bg-brand-hover disabled:opacity-50 whitespace-nowrap"
-            >
-              {creating ? t('loadingEllipsis') : tCommon('add')}
-            </button>
-          )}
-        </div>
-
-        {searched && (
-          <div className="absolute start-0 top-full mt-1 z-20 rounded-md border border-border bg-card px-2 py-1 shadow-sm">
-            {matched ? (
-              <span className="text-xs text-green-600 font-medium">{t('customerFound')}</span>
-            ) : (
-              <span className="text-xs text-red-500 font-medium">{t('newCustomerEnterName')}</span>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // ── Default variant (stacked, used in modal) ───────────────────────────────
   return (
     <div className="space-y-2" onBlur={handleWidgetBlur}>
       <div className="grid grid-cols-1 gap-2">

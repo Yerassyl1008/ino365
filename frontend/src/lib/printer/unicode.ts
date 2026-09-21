@@ -17,7 +17,7 @@
  * only fold letters the font ROM cannot draw.
  */
 
-import { foldUnsupportedCyrillic } from '@print/cp866';
+import { foldForCp866Printer, needsCp866Fold } from '@print/cp866';
 
 // Currency fallbacks are kept to two or three ASCII characters so receipt
 // amount columns remain bounded for common symbols and ISO-style tokens.
@@ -39,19 +39,20 @@ export const CURRENCY_ASCII_MAP: Record<string, string> = {
   '₵': 'Gh',
   '₡': 'Cr',
   '₲': 'Pg',
+  '₸': 'KZT',
 };
 
 export function normalizeCyrillicThermalText(text: string): string {
-  return foldUnsupportedCyrillic(text);
+  return foldForCp866Printer(text);
 }
 
 /**
  * Folds a receipt line to characters a generic thermal printer can render.
- * Russian/Kazakh keep PC866 Cyrillic; leftover non-PC866 letters (Kazakh
- * extras) are romanized so the line still prints.
+ * Russian/Kazakh keep PC866 Cyrillic; leftover letters and typographic
+ * punctuation (`№`, em dashes) become PC866-safe so the line is not skipped.
  */
 export function foldThermalText(language: string | undefined, text: string): string {
-  return foldsThermalText(language) || /[\u0400-\u04FF]/.test(text)
+  return foldsThermalText(language) || needsCp866Fold(text)
     ? normalizeCyrillicThermalText(text)
     : text;
 }

@@ -1,4 +1,4 @@
-import { isAllowedPrivateIp, rateLimit, staticRouteRateLimit } from '../main/middleware/security';
+import { isAllowedPrivateIp, isAllowedCorsOrigin, rateLimit, staticRouteRateLimit } from '../main/middleware/security';
 import express from 'express';
 import request from 'supertest';
 
@@ -224,6 +224,25 @@ async function run() {
     staticRes = await request(staticPrivateApp).get('/page').set('x-test-ip', '192.168.1.100');
     assert(staticRes.status === 200, `static: private IP request ${i + 1} bypasses rate limiting`);
   }
+
+  console.log('Testing CORS origin allowlist (LAN + Cloudflare tunnel)...');
+
+  assert(isAllowedCorsOrigin(undefined) === true, 'missing Origin is allowed');
+  assert(isAllowedCorsOrigin('http://localhost:3001') === true, 'localhost origin allowed');
+  assert(isAllowedCorsOrigin('http://192.168.1.5:3001') === true, 'LAN origin allowed');
+  assert(isAllowedCorsOrigin('https://random-name.trycloudflare.com') === true, 'quick tunnel origin allowed');
+  assert(isAllowedCorsOrigin('https://eviltrycloudflare.com') === false, 'lookalike tunnel host denied');
+  assert(isAllowedCorsOrigin('https://reports.cafe.kz', 'reports.cafe.kz') === true, 'same-host custom domain allowed');
+  assert(isAllowedCorsOrigin('https://reports.cafe.kz', 'reports.cafe.kz:443') === true, 'same-host with port allowed');
+  assert(isAllowedCorsOrigin('https://attacker.example', 'reports.cafe.kz') === false, 'cross-origin custom domain denied');
+  assert(isAllowedCorsOrigin('https://attacker.example') === false, 'public origin without matching Host denied');
+
+  const previousPublic = process.env.FLO_PUBLIC_ORIGINS;
+  process.env.FLO_PUBLIC_ORIGINS = 'https://kassa.example.kz, https://waiter.example.kz';
+  assert(isAllowedCorsOrigin('https://kassa.example.kz') === true, 'FLO_PUBLIC_ORIGINS allows listed kassa origin');
+  assert(isAllowedCorsOrigin('https://waiter.example.kz') === true, 'FLO_PUBLIC_ORIGINS allows listed waiter origin');
+  if (previousPublic === undefined) delete process.env.FLO_PUBLIC_ORIGINS;
+  else process.env.FLO_PUBLIC_ORIGINS = previousPublic;
 
   console.log('✅ All CORS IP Validation & Rate Limiter tests passed!');
 

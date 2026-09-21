@@ -266,11 +266,14 @@ function seedCustomer(db: any, id: string, name: string, phone?: string) {
   ).run(id, name, phone || null, 1, now(), now());
 }
 
-function seedTable(db: any, id: string, number: number, capacity?: number) {
+function seedTable(db: any, id: string, number: number, capacity?: number, hallId?: string) {
+  const resolvedHallId = hallId
+    || (db.prepare('SELECT id FROM halls ORDER BY is_default DESC, sort_order, name LIMIT 1').get() as { id: string } | undefined)?.id
+    || null;
   db.prepare(
-    `INSERT OR IGNORE INTO tables (id, number, capacity, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  ).run(id, number, capacity || 4, 'available', now(), now());
+    `INSERT OR IGNORE INTO tables (id, number, capacity, status, hall_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(id, number, capacity || 4, 'available', resolvedHallId, now(), now());
 }
 
 function seedWalletCredit(db: any, customerId: string, amount: number, billId?: number) {

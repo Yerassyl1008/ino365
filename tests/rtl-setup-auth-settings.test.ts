@@ -46,6 +46,7 @@ const SCREEN_FILES = [
   'frontend/src/components/settings/HealthCheckDialog.tsx',
   'frontend/src/components/settings/MasterPinPrompt.tsx',
   'frontend/src/components/settings/WhatsAppEnableCard.tsx',
+  'frontend/src/components/settings/RemoteOwnerAccess.tsx',
 ];
 
 /**

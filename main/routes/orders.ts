@@ -16,6 +16,7 @@ import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { consumeOrderItemIngredients, restoreOrderItemIngredients } from '../services/kitchen-inventory';
 import { computeServiceChargeFields } from '../services/service-charge';
+import { catalogLineDiscount } from '../../shared/dish-discount';
 import { maybeAutoPrintKot } from '../services/kot-print';
 import expressRateLimit from 'express-rate-limit';
 
@@ -32,6 +33,22 @@ function parseGuestSeatCourse(item: any): { guest_seat: number; course: number }
     guest_seat: Number.isInteger(guest) && guest >= 1 && guest <= 99 ? guest : 1,
     course: Number.isInteger(course) && course >= 1 && course <= 5 ? course : 1,
   };
+}
+
+function addonLineTotal(addons: any[] | undefined, quantity: number): number {
+  if (!Array.isArray(addons)) return 0;
+  let total = 0;
+  for (const addon of addons) {
+    if (!addon) continue;
+    const addonQty = addon.quantity || 1;
+    total += (addon.price || 0) * addonQty * quantity;
+  }
+  return total;
+}
+
+function catalogItemDiscount(product: any, orderType: string, quantity: number, addons: any[] | undefined): number {
+  const unitPrice = parseFloat(product.price);
+  return catalogLineDiscount(product, orderType, unitPrice, quantity, addonLineTotal(addons, quantity));
 }
 
 function findManagerByPin(db: ReturnType<typeof getDatabase>, overridePin: string) {
@@ -324,7 +341,12 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
   const tablesById = new Map<string, any>();
   if (tableIds.length > 0) {
     const ph = tableIds.map(() => '?').join(',');
-    const rows = db.prepare(`SELECT * FROM tables WHERE id IN (${ph})`).all(...tableIds) as any[];
+    const rows = db.prepare(`
+      SELECT t.*, h.name AS hall_name
+      FROM tables t
+      LEFT JOIN halls h ON h.id = t.hall_id
+      WHERE t.id IN (${ph})
+    `).all(...tableIds) as any[];
     for (const t of rows) tablesById.set(t.id, t);
   }
   const customersById = new Map<string, any>();
@@ -528,10 +550,9 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
 
         const unitPrice = parseFloat(product.price);
         const quantity = item.quantity;
-        // item.discount_amount is intentionally ignored here — discounts are only
-        // applied through the dedicated PATCH discount endpoints, which enforce
-        // discount_mode/max_percentage/max_amount/approval (vuln-0002).
-        const itemDiscount = 0;
+        // Client item.discount_amount is ignored (vuln-0002). Catalog dish
+        // discounts apply here when the order type matches the product.
+        const itemDiscount = catalogItemDiscount(product, type, quantity, item.addons);
 
         // Validate quantity and price
         validateProductQuantity(product, quantity);
@@ -760,10 +781,9 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
 
         const unitPrice = parseFloat(product.price);
         const quantity = item.quantity;
-        // item.discount_amount is intentionally ignored here — discounts are only
-        // applied through the dedicated PATCH discount endpoints, which enforce
-        // discount_mode/max_percentage/max_amount/approval (vuln-0002).
-        const itemDiscount = 0;
+        // Client item.discount_amount is ignored (vuln-0002). Catalog dish
+        // discounts apply here when the order type matches the product.
+        const itemDiscount = catalogItemDiscount(product, currentOrder.type, quantity, item.addons);
 
         // Validate quantity and price
         validateProductQuantity(product, quantity);

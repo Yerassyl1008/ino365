@@ -5,6 +5,13 @@ import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getHttpRequestSignal } from '../shutdown';
 import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
 import { JOINED_CATEGORY_SCOPE_SQL, categoryVisibleForBusiness, normalizeCatalogBusinessType } from '../../shared/catalog-scope';
+import {
+  ALL_ORDER_TYPES,
+  isOrderType,
+  parseDiscountAppliesTo,
+  serializeDiscountAppliesTo,
+  type OrderType,
+} from '../../shared/dish-discount';
 import * as crypto from 'crypto';
 import * as dns from 'dns';
 import * as https from 'https';
@@ -316,6 +323,9 @@ function serializeProduct(product: any): any {
     track_inventory: toBoolean(product.track_inventory),
     allow_fractional_quantity: toBoolean(product.allow_fractional_quantity),
     has_image: toBoolean(product.has_image),
+    discount_type: product.discount_type === 'percentage' || product.discount_type === 'amount' ? product.discount_type : null,
+    discount_value: Number(product.discount_value) || 0,
+    discount_applies_to: parseDiscountAppliesTo(product.discount_applies_to),
     category: serializeCategory(product.category),
     addon_groups: Array.isArray(product.addon_groups) ? product.addon_groups.map(serializeAddonGroup) : product.addon_groups,
   };
@@ -345,6 +355,55 @@ function validateProductNumericFields(values: Record<string, unknown>, requirePr
 
 function normalizeSaleUnit(value: unknown): typeof VALID_SALE_UNITS[number] {
   return VALID_SALE_UNITS.includes(value as any) ? value as typeof VALID_SALE_UNITS[number] : 'each';
+}
+
+function parseProductDiscountFields(
+  body: Record<string, unknown>,
+  partial: boolean,
+): { error: string } | { omit: true } | { discount_type: 'percentage' | 'amount' | null; discount_value: number; discount_applies_to: string | null } {
+  const hasType = hasOwn(body, 'discount_type');
+  const hasValue = hasOwn(body, 'discount_value');
+  const hasApplies = hasOwn(body, 'discount_applies_to');
+  if (partial && !hasType && !hasValue && !hasApplies) {
+    return { omit: true };
+  }
+
+  const rawValue = body.discount_value;
+  if (rawValue === null || rawValue === undefined || rawValue === '') {
+    return { discount_type: null, discount_value: 0, discount_applies_to: null };
+  }
+  if (typeof rawValue !== 'number' || !Number.isFinite(rawValue) || rawValue < 0) {
+    return { error: 'discount_value must be a finite non-negative number' };
+  }
+  if (rawValue === 0) {
+    return { discount_type: null, discount_value: 0, discount_applies_to: null };
+  }
+
+  const discountType = body.discount_type;
+  if (discountType !== 'percentage' && discountType !== 'amount') {
+    return { error: 'discount_type must be "percentage" or "amount"' };
+  }
+  if (discountType === 'percentage' && rawValue > 100) {
+    return { error: 'discount_value must not exceed 100 percent' };
+  }
+
+  let channels: OrderType[] = ALL_ORDER_TYPES;
+  if (hasApplies) {
+    if (!Array.isArray(body.discount_applies_to)) {
+      return { error: 'discount_applies_to must be an array of order types' };
+    }
+    const parsed = (body.discount_applies_to as unknown[]).filter(isOrderType);
+    if (parsed.length === 0) {
+      return { error: 'discount_applies_to must include at least one order type' };
+    }
+    channels = ALL_ORDER_TYPES.filter((type) => parsed.includes(type));
+  }
+
+  return {
+    discount_type: discountType,
+    discount_value: Math.round(rawValue * 100) / 100,
+    discount_applies_to: serializeDiscountAppliesTo(channels),
+  };
 }
 
 function validateWeightedProductFields(
@@ -469,7 +528,9 @@ router.get('/', (req: Request, res: Response) => {
     let query = `SELECT p.id, p.category_id, p.name, p.description, p.price, p.cost, p.sku, p.barcode,
       p.sale_unit, p.allow_fractional_quantity, p.weight_precision,
       p.is_active, p.sort_order, p.track_inventory, p.stock_quantity, p.low_stock_threshold,
-      p.tax_type, p.tax_rate, p.tax_category_id, p.tax_behavior, p.cb_percent, p.tags, p.deleted_at, p.created_at, p.updated_at,
+      p.tax_type, p.tax_rate, p.tax_category_id, p.tax_behavior, p.cb_percent, p.tags,
+      p.discount_type, p.discount_value, p.discount_applies_to,
+      p.deleted_at, p.created_at, p.updated_at,
       CASE WHEN p.image_url IS NULL OR p.image_url = '' THEN 0 ELSE 1 END AS has_image
       FROM products p 
       LEFT JOIN categories c ON p.category_id = c.id
@@ -774,6 +835,13 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
     if (taxCategoryError) {
       return res.status(400).json({ error: taxCategoryError });
     }
+    const discountFields = parseProductDiscountFields(req.body, false);
+    if ('error' in discountFields) {
+      return res.status(400).json({ error: discountFields.error });
+    }
+    const productDiscount = 'omit' in discountFields
+      ? { discount_type: null, discount_value: 0, discount_applies_to: null }
+      : discountFields;
 
     // Validate image_url at write time (server-side security boundary)
     const imageValidation = validateImageUrl(image_url);
@@ -812,8 +880,9 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
         INSERT INTO products (id, category_id, name, sku, barcode, description, price, cost,
           sale_unit, allow_fractional_quantity, weight_precision,
           tax_type, tax_rate, tax_category_id, tax_behavior, track_inventory, stock_quantity, low_stock_threshold,
-          is_active, image_url, sort_order, cb_percent, tags, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          is_active, image_url, sort_order, cb_percent, tags,
+          discount_type, discount_value, discount_applies_to, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id, normalizeNullableString(category_id), productName, normalizeNullableString(sku), normalizedBarcode, normalizeNullableString(description), price, cost_price || 0,
         normalizeSaleUnit(sale_unit), allow_fractional_quantity ? 1 : 0, weight_precision ?? 3,
@@ -821,6 +890,7 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
         track_inventory ? 1 : 0, stock_quantity || 0, low_stock_threshold || 0,
         is_active !== false ? 1 : 0, normalizeNullableString(image_url),
         sort_order || 0, cb_percent !== undefined ? cb_percent : null, JSON.stringify(tags || []),
+        productDiscount.discount_type, productDiscount.discount_value, productDiscount.discount_applies_to,
         now(), now()
       );
 
@@ -883,6 +953,10 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
     if (taxCategoryError) {
       return res.status(400).json({ error: taxCategoryError });
     }
+    const discountFields = parseProductDiscountFields(req.body, true);
+    if ('error' in discountFields) {
+      return res.status(400).json({ error: discountFields.error });
+    }
     if (hasOwn(req.body, 'category_id')) {
       const categoryError = validateCategoryId(db, category_id);
       if (categoryError) {
@@ -921,6 +995,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
     const hasSaleUnit = hasOwn(req.body, 'sale_unit');
     const hasAllowFractionalQuantity = hasOwn(req.body, 'allow_fractional_quantity');
     const hasWeightPrecision = hasOwn(req.body, 'weight_precision');
+    const hasDiscount = !('omit' in discountFields);
 
     const addonGroupValidation = validateAddonGroupIds(db, addon_group_ids);
     if (addonGroupValidation.error) {
@@ -954,6 +1029,9 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
           sort_order = COALESCE(@sort_order, sort_order),
           cb_percent = CASE WHEN @has_cb_percent = 1 THEN @cb_percent ELSE cb_percent END,
           tags = CASE WHEN @has_tags = 1 THEN @tags ELSE tags END,
+          discount_type = CASE WHEN @has_discount = 1 THEN @discount_type ELSE discount_type END,
+          discount_value = CASE WHEN @has_discount = 1 THEN @discount_value ELSE discount_value END,
+          discount_applies_to = CASE WHEN @has_discount = 1 THEN @discount_applies_to ELSE discount_applies_to END,
           updated_at = @updated_at
         WHERE id = @id
       `).run({
@@ -990,6 +1068,10 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
         cb_percent: hasCbPercent ? cb_percent : null,
         has_tags: hasTags ? 1 : 0,
         tags: hasTags ? JSON.stringify(tags || []) : null,
+        has_discount: hasDiscount ? 1 : 0,
+        discount_type: hasDiscount && !('omit' in discountFields) ? discountFields.discount_type : null,
+        discount_value: hasDiscount && !('omit' in discountFields) ? discountFields.discount_value : 0,
+        discount_applies_to: hasDiscount && !('omit' in discountFields) ? discountFields.discount_applies_to : null,
         updated_at: now(),
         id: req.params.id
       });

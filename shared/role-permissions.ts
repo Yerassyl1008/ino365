@@ -121,7 +121,9 @@ export const PERMISSION_CAPABILITIES = [
   { id: 'whatsappManage', area: 'integrations', labelKey: 'whatsappManage', allowedRoles: ROLE_ACCESS.ownerManager },
   { id: 'cloudDrive', area: 'integrations', labelKey: 'cloudDrive', allowedRoles: ROLE_ACCESS.ownerManager },
   { id: 'cloudAccountData', area: 'integrations', labelKey: 'cloudAccountData', allowedRoles: ROLE_ACCESS.owner },
+  { id: 'remoteAccess', area: 'integrations', labelKey: 'remoteAccess', allowedRoles: ROLE_ACCESS.owner },
   { id: 'databaseTools', area: 'system', labelKey: 'databaseTools', allowedRoles: ROLE_ACCESS.owner },
+  { id: 'waiterQr', area: 'orders', labelKey: 'waiterQr', allowedRoles: ROLE_ACCESS.ownerManagerCashier },
   { id: 'serverApp', area: 'orders', labelKey: 'serverApp', allowedRoles: ROLE_ACCESS.serverApp },
   { id: 'support', area: 'support', labelKey: 'support', allowedRoles: ROLE_ACCESS.allStaff },
 ] as const satisfies readonly PermissionCapability[];
@@ -143,6 +145,11 @@ export function pinAllowedForRole(role: string | null | undefined): boolean {
 /** One till window: waiters, cashiers, managers, and owners operate POS with PIN. Chefs stay on KDS. */
 export function canAccessPos(role: string | null | undefined): boolean {
   return hasRole(role, ROLE_ACCESS.sales);
+}
+
+/** Cashier, manager, and owner can show the waiter QR / PIN guide without opening Settings. */
+export function canShowWaiterQr(role: string | null | undefined): boolean {
+  return hasRole(role, ROLE_ACCESS.ownerManagerCashier);
 }
 
 export function capabilityAllows(capability: PermissionCapability, role: string | null | undefined): boolean {

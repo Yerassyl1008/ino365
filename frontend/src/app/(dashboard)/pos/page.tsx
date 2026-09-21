@@ -4,16 +4,16 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { useCartStore } from '@/store/cart';
-import { useHeldOrdersStore } from '@/store/held-orders';
+import { heldOrderErrorMessage, useHeldOrdersStore } from '@/store/held-orders';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useRouter } from 'next/navigation';
 import { useSidebar } from '@/components/ui/sidebar';
 import toast from 'react-hot-toast';
 import { ShoppingCart, X } from 'lucide-react';
-import type { Addon, Category, Product, Table, Bill, Order, OrderItem, CartItem } from '@/lib/types';
+import type { Addon, Category, Product, Table, Hall, Bill, Order, OrderItem, CartItem } from '@/lib/types';
 import { useConfirm } from '@/hooks/use-confirm';
 import {
-  Drawer, DrawerContent, DrawerTrigger,
+  Drawer, DrawerContent,
 } from '@/components/ui/drawer';
 
 import ProductGrid from '@/components/pos/ProductGrid';
@@ -33,7 +33,7 @@ import { Ltr } from '@/components/layout/Ltr';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useSupportTicketStatus } from '@/hooks/useSupportTicketStatus';
 import { useSupportDiagnosticsPreview } from '@/hooks/useSupportDiagnosticsPreview';
-import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
+import { getCurrencySymbol, getCountryByCode, resolveDisplayCurrency } from '@/lib/countries';
 import { resolveScannedProduct } from '@/lib/scale-barcode';
 import { ROLE_ACCESS, canAccessPos, hasRole } from '@shared/role-permissions';
 import { getLandingPage } from '@/components/layout/AuthGuard';
@@ -87,6 +87,7 @@ export default function POSPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [tables, setTables] = useState<Table[]>([]);
+  const [halls, setHalls] = useState<Hall[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -95,6 +96,7 @@ export default function POSPage() {
 
   // Modal state
   const [showTablePicker, setShowTablePicker] = useState(false);
+  const [posCatalogReady, setPosCatalogReady] = useState(false);
   const [addonProduct, setAddonProduct] = useState<Product | null>(null);
   const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
   const [checkoutTable, setCheckoutTable] = useState<Table | null>(null);
@@ -251,7 +253,10 @@ export default function POSPage() {
     ? globalThis.crypto.randomUUID()
     : `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-  const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
+  const currency = getCurrencySymbol(
+    resolveDisplayCurrency(currentTenant?.country, currentTenant?.currency),
+    getCountryByCode(currentTenant?.country ?? '')?.locale ?? 'ru-KZ',
+  );
   const { printBill, printKot, hardwarePrinter, printMethod } = usePrinterStore();
   const billingIsPrepaid = billingType === 'prepaid';
   const shouldTakePaymentNow = billingIsPrepaid;
@@ -362,8 +367,12 @@ export default function POSPage() {
   const refreshTables = async () => {
     if (!isRestaurant || !tablesRequired) return;
     try {
-      const { data } = await api.get('/tables?active=1');
-      setTables(data.tables || []);
+      const [tablesRes, hallsRes] = await Promise.all([
+        api.get('/tables?active=1'),
+        api.get('/halls'),
+      ]);
+      setTables(tablesRes.data.tables || []);
+      setHalls(hallsRes.data.halls || []);
     } catch { /* ignore */ }
   };
 
@@ -448,9 +457,10 @@ export default function POSPage() {
         
         if (isRestaurant && isTablesRequired) {
           requests.push(api.get('/tables?active=1'));
+          requests.push(api.get('/halls'));
         }
         
-        const [catRes, prodRes, tableRes] = await Promise.all(requests);
+        const [catRes, prodRes, tableRes, hallsRes] = await Promise.all(requests);
         setCategories((catRes.data.categories as Category[]) || []);
         setProducts((prodRes.data.products as Product[]) || []);
         
@@ -459,6 +469,7 @@ export default function POSPage() {
         } else {
           setTables([]);
         }
+        setHalls(hallsRes ? ((hallsRes.data.halls as Hall[]) || []) : []);
 
         // 3. Fetch held orders only for roles that can hold a table
         if (isTablesRequired && hasRole(currentTenant?.role, ROLE_ACCESS.sales)) {
@@ -466,13 +477,29 @@ export default function POSPage() {
         }
       } catch {
         toast.error(t('menuLoadFailed'));
+      } finally {
+        setPosCatalogReady(true);
       }
     };
     fetchData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRestaurant, currentTenant?.role, setBillingType, setTablesRequired, setKotPrintingEnabled]);
 
+  const needsTableFirst = posCatalogReady && isRestaurant && tablesRequired && !cart.tableId;
+
+  const showTableFloor = needsTableFirst
+    || (posCatalogReady && isRestaurant && tablesRequired && showTablePicker);
+
+  const openTablePicker = () => {
+    if (needsTableFirst) return;
+    setShowTablePicker((open) => !open);
+  };
+
   const handleProductClick = (product: Product) => {
+    if (needsTableFirst) {
+      toast.error(t('selectTableFirst'));
+      return;
+    }
     // Always open modal so user can add notes and adjust quantity
     setAddonProduct(product);
   };
@@ -499,7 +526,7 @@ export default function POSPage() {
     } else {
       toast.error(t('barcodeNotFound', { code }));
     }
-  }, !anyModalOpen);
+  }, !anyModalOpen && !needsTableFirst && posCatalogReady);
 
   const handlePlaceOrder = async () => {
     if (cart.items.length === 0) {
@@ -510,8 +537,8 @@ export default function POSPage() {
       setShowCustomerPrompt(true);
       return;
     }
-    if (isRestaurant && cart.orderType === 'dine_in' && tablesRequired && !cart.tableId) {
-      setShowTablePicker(true);
+    if (needsTableFirst) {
+      toast.error(t('selectTableFirst'));
       return;
     }
 
@@ -887,18 +914,23 @@ export default function POSPage() {
 
   const handleHoldTable = async (tableId: string) => {
     if (cart.items.length === 0) {
-      toast.error(t('cartEmpty'));
+      toast.error(t('holdRequiresItems'));
       return;
     }
-    const tableName = tables.find((t) => t.id === tableId)?.name || tableId;
+    const table = tables.find((item) => item.id === tableId);
+    if (table && (table.status === 'occupied' || table.status === 'precheck')) {
+      toast.error(t('holdTableOccupied'));
+      return;
+    }
+    const tableName = table?.name || tableId;
     try {
       await heldOrders.holdOrder(tableId, cart.items, cart.customerId, cart.guestCount, cart.orderNotes);
       cart.clearCart();
       setShowTablePicker(false);
       toast.success(t('orderHeld', { tableName }));
       await refreshTables();
-    } catch {
-      toast.error(t('holdOrderFailed'));
+    } catch (err) {
+      toast.error(heldOrderErrorMessage(err, t('holdOrderFailed')));
     }
   };
 
@@ -1001,11 +1033,12 @@ export default function POSPage() {
     currency,
     submitting,
     onPlaceOrder: handlePlaceOrder,
-    onShowTablePicker: () => setShowTablePicker(true),
+    onShowTablePicker: openTablePicker,
     onEditItem: setEditingCartItem,
     existingOrder: pendingOrder,
     advancingItemId,
     onAdvanceKitchenItem: handleAdvanceKitchenItem,
+    hideOrderTypeTabs: showTableFloor,
   };
 
   const itemCount = cart.itemCount();
@@ -1013,7 +1046,7 @@ export default function POSPage() {
   const fabCount = itemCount + kitchenOpenCount;
 
   return (
-    <>
+    <div className="flex min-h-0 flex-1 flex-col flo-phone-page-scroll md:h-full md:overflow-hidden">
       {supportError && (
         <div className="fixed bottom-4 start-4 z-50 w-[min(28rem,calc(100vw-2rem))] rounded-xl border border-red-200 bg-card p-4 shadow-xl">
           {sentTicketId ? (
@@ -1076,26 +1109,46 @@ export default function POSPage() {
       )}
       <PosTopbar
         tables={tables}
-        onShowTablePicker={() => setShowTablePicker(true)}
+        onShowTablePicker={openTablePicker}
         fullscreen={fullscreen}
         onToggleFullscreen={toggleFullscreen}
+        floorOpen={showTableFloor}
       />
 
       {/* Main content area */}
-      <div className="flex flex-1 min-h-0 overflow-hidden p-2 gap-2 md:p-4 md:gap-4">
+      <div className="flex min-h-0 flex-1 overflow-hidden p-0 gap-1 flo-phone-page-scroll md:overflow-hidden md:p-4 md:gap-4">
         {/* Product Grid — full width on mobile, flex-1 on desktop */}
-        <div className="flex-1 min-w-0 h-full flex flex-col">
-          <ProductGrid
-            categories={categories}
-            products={products}
-            selectedCategory={selectedCategory}
-            setSelectedCategory={setSelectedCategory}
-            search={search}
-            setSearch={setSearch}
-            currency={currency}
-            onProductClick={handleProductClick}
-            sidebarOpen={leftSidebarOpen}
-          />
+        <div className="flex h-auto min-h-0 min-w-0 flex-col flo-phone-page-scroll md:h-full md:min-h-0 md:flex-1">
+          {!posCatalogReady ? (
+            <div className="flex-1 min-h-0 h-full rounded-xl border border-border bg-card" />
+          ) : showTableFloor ? (
+              <TablePickerModal
+                variant="panel"
+                tables={tables}
+                halls={halls}
+                selectedTableId={cart.tableId}
+                orderType={cart.orderType}
+                onOrderTypeChange={cart.setOrderType}
+                onSelectAvailable={handleSelectAvailableTable}
+                onSelectOccupied={handleSelectOccupiedTable}
+                onSelectHeld={handleSelectHeldTable}
+                onPlaceOrder={handlePlaceOrder}
+                onHoldTable={handleHoldTable}
+                onClose={cart.tableId ? () => setShowTablePicker(false) : undefined}
+              />
+          ) : (
+            <ProductGrid
+              categories={categories}
+              products={products}
+              selectedCategory={selectedCategory}
+              setSelectedCategory={setSelectedCategory}
+              search={search}
+              setSearch={setSearch}
+              currency={currency}
+              onProductClick={handleProductClick}
+              sidebarOpen={leftSidebarOpen}
+            />
+          )}
         </div>
 
         {/* Desktop Cart — always open, hidden on mobile */}
@@ -1104,37 +1157,28 @@ export default function POSPage() {
         </div>
       </div>
 
-      {/* Mobile: Floating Cart Button + Bottom Sheet — outside flex container */}
-      <Drawer open={mobileCartOpen} onOpenChange={setMobileCartOpen}>
-        <DrawerTrigger asChild>
-          <button className="touch-target fixed bottom-5 end-5 z-40 w-14 h-14 bg-brand text-white rounded-full shadow-lg hover:bg-brand-hover active:bg-brand-hover transition-colors md:hidden" aria-label={t('cart')}>
-            <ShoppingCart size={22} />
-            {fabCount > 0 && (
-              <span className="absolute -top-0.5 -end-0.5 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
-                {fabCount}
-              </span>
-            )}
-          </button>
-        </DrawerTrigger>
-        <DrawerContent className="max-h-[85vh]">
-          <div className="overflow-y-auto max-h-[80vh] px-2 pb-2">
-            <CartPanel {...cartPanelProps} variant="drawer" />
-          </div>
-        </DrawerContent>
-      </Drawer>
-
-      {/* Modals */}
-      {isRestaurant && showTablePicker && (
-        <TablePickerModal
-          tables={tables}
-          selectedTableId={cart.tableId}
-          onSelectAvailable={handleSelectAvailableTable}
-          onSelectOccupied={handleSelectOccupiedTable}
-          onSelectHeld={handleSelectHeldTable}
-          onPlaceOrder={handlePlaceOrder}
-          onHoldTable={handleHoldTable}
-          onClose={() => setShowTablePicker(false)}
-        />
+      {/* Mobile cart: 56px FAB only — never a full-screen hit target while closed. */}
+      <button
+        type="button"
+        className="touch-target fixed bottom-5 end-5 z-40 w-14 h-14 bg-brand text-white rounded-full shadow-lg hover:bg-brand-hover active:bg-brand-hover transition-colors md:hidden"
+        aria-label={t('cart')}
+        onClick={() => setMobileCartOpen(true)}
+      >
+        <ShoppingCart size={22} />
+        {fabCount > 0 && (
+          <span className="absolute -top-0.5 -end-0.5 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
+            {fabCount}
+          </span>
+        )}
+      </button>
+      {mobileCartOpen && (
+        <Drawer open onOpenChange={setMobileCartOpen} shouldScaleBackground={false}>
+          <DrawerContent className="max-h-[85vh]">
+            <div className="overflow-y-auto max-h-[80vh] px-2 pb-2">
+              <CartPanel {...cartPanelProps} variant="drawer" />
+            </div>
+          </DrawerContent>
+        </Drawer>
       )}
 
       {addonProduct && (
@@ -1208,6 +1252,6 @@ export default function POSPage() {
         />
       )}
 
-    </>
+    </div>
   );
 }

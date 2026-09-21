@@ -1,5 +1,4 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
-import cors from 'cors';
 import { WebSocketServer } from 'ws';
 import * as http from 'http';
 import { closeServerResources, createShutdownCancellationError, installHttpShutdownTracking } from './shutdown';
@@ -12,7 +11,8 @@ import { getJWTSecret } from './routes/auth';
 import { databaseMaintenanceMiddleware, getDbHealth, isDatabaseMaintenanceActive, isKdsEnabled } from './db';
 import { setupKdsWebSocket } from './services/kds';
 import expressRateLimit from 'express-rate-limit';
-import { staticRouteRateLimit, corsOptions, getUserAuthStatus, isAllowedPrivateIp, isTokenRevoked, isTokenStale } from './middleware/security';
+import { staticRouteRateLimit, corsMiddleware, configureExpressForPublicHttp, getUserAuthStatus, isAllowedPrivateIp, isTokenRevoked, isTokenStale } from './middleware/security';
+import { stopOwnerTunnel } from './services/remote-tunnel';
 import { initFromDb as initWhatsAppFromDb } from './services/whatsapp';
 import { API_JSON_BODY_LIMIT } from './http-limits';
 import { buildCspHeader } from './csp';
@@ -154,8 +154,9 @@ export function startServer(): Promise<void> {
   return new Promise((resolve, reject) => {
     startReject = reject;
     app = express();
+    configureExpressForPublicHttp(app);
 
-    app.use(cors(corsOptions));
+    app.use(corsMiddleware);
     app.use(express.json({ limit: API_JSON_BODY_LIMIT }));
     app.use((error: any, _req: Request, res: Response, next: NextFunction) => {
       if (error?.type === 'entity.too.large') {
@@ -392,7 +393,11 @@ export function stopServer(): Promise<void> {
   server = null;
   wss = null;
 
-  stopPromise = closeServerResources(serverToClose, wssToClose, 'Main server')
+  stopPromise = Promise.resolve()
+    .then(() => stopOwnerTunnel().catch((error) => {
+      console.error('[Server] Tunnel stop failed:', error);
+    }))
+    .then(() => closeServerResources(serverToClose, wssToClose, 'Main server'))
     .then(() => {
       console.log('[Server] HTTP/WebSocket server stopped');
     });

@@ -4,6 +4,7 @@ import * as jwt from 'jsonwebtoken';
 import { getJWTSecret, parseCategoryIds } from '../routes/auth';
 import { getUserAuthStatus, isTokenRevoked, isTokenStale } from '../middleware/security';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
+import { tableDisplayName } from '../../shared/table-label';
 
 interface KdsClient {
   ws: WebSocket;
@@ -482,9 +483,10 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
   if (!stationCategoryIds || !stationScope || !stationRoutingCategoryIds) throw new Error('Could not load station permissions');
 
   let query = `
-    SELECT o.*, t.number as table_name, t.kitchen_station_id
+    SELECT o.*, t.number as table_name, h.name as hall_name, t.kitchen_station_id
     FROM orders o
     LEFT JOIN tables t ON o.table_id = t.id
+    LEFT JOIN halls h ON h.id = t.hall_id
     WHERE ${activeOrdersCondition()}
   `;
 
@@ -554,7 +556,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
     items = items.map((item: any) => projectKdsItem(item, restrictedPayload));
 
     // Normalize: frontend expects table.name, query aliases the join as table_name.
-    const table = order.table_name ? { name: order.table_name } : null;
+    const table = order.table_name ? { name: tableDisplayName(order.table_name, order.hall_name), hall_name: order.hall_name || null } : null;
     return { ...projectKdsOrder(order, restrictedPayload), items, table };  }).filter((order: any) => order.items.length > 0);
 
   // Get counts (filtered by category)

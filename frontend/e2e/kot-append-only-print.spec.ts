@@ -100,21 +100,20 @@ test('adding an item to an occupied table only prints the newly appended item on
     await page.locator('button[type="submit"]').click();
     await page.waitForURL('**/pos/**', { timeout: 20000 });
     await page.waitForFunction(() => !!localStorage.getItem('token'));
+    await expect(page.getByTestId('pos-table-picker')).toBeVisible();
+
+    // Dine-in POS opens the floor plan first; occupied table → add items → menu.
+    await page.getByText(tableNumber, { exact: true }).click();
+    await page.getByRole('button', { name: 'Add Items' }).click();
     await expect(page.getByTestId('pos-product-grid')).toBeVisible();
 
-    // Add a second item to the cart, then send it to the already-occupied table.
     await page.getByTestId('pos-product-card').click();
     await page.getByRole('button', { name: /Add to Cart/ }).click();
-    await page.getByRole('button', { name: 'Place Order' }).click();
 
-    await expect(page.getByRole('heading', { name: 'Select Table' })).toBeVisible();
-    await page.getByText(tableNumber, { exact: true }).click();
-
-    await expect(page.getByRole('button', { name: /Add 1 item to order/i })).toBeVisible();
     const kotResponse = page.waitForResponse((response) =>
       response.url().includes('/api/printers/print-kot')
     );
-    await page.getByRole('button', { name: /Add 1 item to order/i }).click();
+    await page.getByRole('button', { name: 'Place Order' }).click();
     await kotResponse;
 
     await expect(page.getByText(/Items added to order/)).toBeVisible();

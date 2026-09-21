@@ -30,7 +30,7 @@ function canSetTargetPin(requesterRole: string | undefined, targetRole: string):
   return false;
 }
 
-export function ServerAppWaiterAccess() {
+export function ServerAppWaiterAccess({ variant = 'card' }: { variant?: 'card' | 'embedded' }) {
   const t = useTranslations('settings');
   const tStaff = useTranslations('staff');
   const tCommon = useTranslations('common');
@@ -103,18 +103,28 @@ export function ServerAppWaiterAccess() {
     }
   };
 
+  const shellClass = variant === 'embedded'
+    ? 'space-y-5'
+    : 'bg-card rounded-xl border border-border p-6 space-y-5';
+
   return (
-    <div className="bg-card rounded-xl border border-border p-6 space-y-5">
-      <div className="flex items-center gap-2">
-        <KeyRound size={20} className="text-muted-foreground" />
-        <h2 className="font-semibold text-foreground">{t('serverAppWaiterAccessTitle')}</h2>
-      </div>
+    <div className={shellClass}>
+      {variant !== 'embedded' && (
+        <div className="flex items-center gap-2">
+          <KeyRound size={20} className="text-muted-foreground" />
+          <h2 className="font-semibold text-foreground">{t('serverAppWaiterAccessTitle')}</h2>
+        </div>
+      )}
 
       <ol className="list-decimal ps-5 space-y-1.5 text-sm text-muted-foreground">
         <li>{t('serverAppWaiterStep1')}</li>
         <li>{t('serverAppWaiterStep2')}</li>
         <li>{t('serverAppWaiterStep3')}</li>
       </ol>
+
+      {!canManagePins && (
+        <p className="text-sm text-muted-foreground">{t('serverAppWaiterCashierPinHint')}</p>
+      )}
 
       {canManagePins && (
         <div className="space-y-3">

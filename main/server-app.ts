@@ -1,5 +1,4 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
-import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import * as http from 'http';
 import * as path from 'path';
@@ -8,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { closeServerResources, createShutdownCancellationError, getHttpRequestSignal, installHttpShutdownTracking, trackHttpRequestWork } from './shutdown';
 import { databaseMaintenanceMiddleware, getDatabase, isServerAppEnabled, verifyPin } from './db';
 import { getJWTSecret } from './routes/auth';
-import { authRateLimit, staticRouteRateLimit, corsOptions, isTokenRevoked, isTokenStale, rateLimit, revokeToken } from './middleware/security';
+import { authRateLimit, staticRouteRateLimit, corsMiddleware, configureExpressForPublicHttp, isTokenRevoked, isTokenStale, rateLimit, revokeToken } from './middleware/security';
 import { getServerPort } from './server';
 import { getDefaultServerAppPort, getServerAppPort as getActiveServerAppPort, setServerAppPort } from './server-app-state';
 import { API_JSON_BODY_LIMIT } from './http-limits';
@@ -154,8 +153,9 @@ export function startServerApp(): Promise<void> {
   return new Promise((resolve, reject) => {
     startReject = reject;
     const app: Express = express();
+    configureExpressForPublicHttp(app);
 
-    app.use(cors(corsOptions));
+    app.use(corsMiddleware);
     app.use((req: Request, res: Response, next: NextFunction) => {
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Content-Security-Policy', buildCspHeader(req));
@@ -280,6 +280,7 @@ export function startServerApp(): Promise<void> {
     app.get('/api/categories', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/categories'));
     app.get('/api/products', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/products'));
     app.get('/api/tables', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/tables'));
+    app.get('/api/halls', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/halls'));
     app.get('/api/orders', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/orders'));
     app.post('/api/orders', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/orders'));
     app.post('/api/orders/:id/items', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, `/orders/${encodeURIComponent(String(req.params.id))}/items`));
@@ -348,7 +349,9 @@ export function startServerApp(): Promise<void> {
         }
         startReject = null;
         listeningServer.off('error', onError);
-        setServerAppPort(attemptedPort);
+        const address = listeningServer.address();
+        const boundPort = address && typeof address !== 'string' ? address.port : attemptedPort;
+        setServerAppPort(boundPort);
         console.log(`[Server App] HTTP server running on http://localhost:${getActiveServerAppPort()}`);
         resolve();
       };

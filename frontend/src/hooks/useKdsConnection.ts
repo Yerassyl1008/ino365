@@ -119,7 +119,7 @@ export interface KdsOrder {
   created_at: string;
   updated_at?: string;
   items?: KdsOrderItem[];
-  table?: { name: string } | null;
+  table?: { name: string; hall_name?: string | null } | null;
 }
 
 export interface KdsUser {

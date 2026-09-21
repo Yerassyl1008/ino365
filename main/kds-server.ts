@@ -1,5 +1,4 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
-import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import { WebSocketServer } from 'ws';
 import * as http from 'http';
@@ -10,10 +9,11 @@ import { closeServerResources, createShutdownCancellationError, installHttpShutd
 import { databaseMaintenanceMiddleware, getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isDatabaseMaintenanceActive, isKdsStationItemAllowed, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, activeKitchenOrderIdsSql, projectKdsItem, projectKdsOrder, verifyPin } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { getJWTSecret, parseCategoryIds } from './routes/auth';
-import { rateLimit, authRateLimit, staticRouteRateLimit, corsOptions, isTokenRevoked, isTokenStale, revokeToken } from './middleware/security';
+import { rateLimit, authRateLimit, staticRouteRateLimit, corsMiddleware, configureExpressForPublicHttp, isTokenRevoked, isTokenStale, revokeToken } from './middleware/security';
 import { buildCspHeader } from './csp';
 import { resolveContainedPath } from './lib/path-containment';
 import { PIN_LOGIN_ROLES, ROLE_ACCESS, hasRole } from '../shared/role-permissions';
+import { tableDisplayName } from '../shared/table-label';
 
 let kdsServer: http.Server | null = null;
 let kdsWss: WebSocketServer | null = null;
@@ -125,8 +125,9 @@ export function startKdsServer(): Promise<void> {
   return new Promise((resolve, reject) => {
     startReject = reject;
     const app: Express = express();
+    configureExpressForPublicHttp(app);
 
-    app.use(cors(corsOptions));
+    app.use(corsMiddleware);
     app.use((req: Request, res: Response, next: NextFunction) => {
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Content-Security-Policy', buildCspHeader(req));
@@ -332,9 +333,10 @@ export function startKdsServer(): Promise<void> {
         const voidedCutoff = new Date(Date.now() - KDS_VOIDED_ITEM_VISIBILITY_MS).toISOString().replace('T', ' ').replace(/\..*$/, '');
 
         let query = `
-          SELECT DISTINCT o.*, t.number as table_number, t.kitchen_station_id
+          SELECT DISTINCT o.*, t.number as table_number, h.name as hall_name, t.kitchen_station_id
           FROM orders o
           LEFT JOIN tables t ON o.table_id = t.id
+          LEFT JOIN halls h ON h.id = t.hall_id
           INNER JOIN order_items oi ON oi.order_id = o.id
           WHERE o.id IN (
             ${activeKitchenOrderIdsSql()}
@@ -406,7 +408,7 @@ export function startKdsServer(): Promise<void> {
 
           return {
             ...projectKdsOrder(order, restrictedKdsPayload),
-            table: order.table_number ? { name: order.table_number } : null,
+            table: order.table_number ? { name: tableDisplayName(order.table_number, order.hall_name), hall_name: order.hall_name || null } : null,
             items,
           };
         }).filter((order: any) => order.items.length > 0);

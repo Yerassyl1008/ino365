@@ -355,18 +355,74 @@ export function getDbHealth(): { ok: boolean; error?: string } {
   return { ok: true };
 }
 
+/** Stable id for the hall created on upgrade / first dine-in seed. */
+export const DEFAULT_HALL_ID = 'hall-default';
+
+export function defaultHallName(language?: string | null): string {
+  const lang = String(language || getSettingValue('language') || '').toLowerCase();
+  return lang === 'en' ? 'Hall' : 'Зал';
+}
+
+/** Ensure at least one hall exists and assign tables that have no hall yet. */
+export function ensureDefaultHall(dbInstance?: Database.Database): { id: string; name: string } {
+  const conn = dbInstance ?? db;
+  const preferred = conn.prepare(
+    `SELECT id, name FROM halls ORDER BY is_default DESC, sort_order ASC, name ASC LIMIT 1`,
+  ).get() as { id: string; name: string } | undefined;
+  if (preferred) {
+    conn.prepare('UPDATE tables SET hall_id = ?, updated_at = ? WHERE hall_id IS NULL')
+      .run(preferred.id, now());
+    return preferred;
+  }
+
+  const stamp = now();
+  const name = defaultHallName();
+  try {
+    conn.prepare(`
+      INSERT INTO halls (id, name, sort_order, is_default, created_at, updated_at)
+      VALUES (?, ?, 0, 1, ?, ?)
+    `).run(DEFAULT_HALL_ID, name, stamp, stamp);
+  } catch {
+    const byName = conn.prepare('SELECT id, name FROM halls WHERE name = ?').get(name) as { id: string; name: string } | undefined;
+    if (!byName) throw new Error('Could not create default hall');
+    conn.prepare('UPDATE halls SET is_default = 1, updated_at = ? WHERE id = ?').run(stamp, byName.id);
+    conn.prepare('UPDATE tables SET hall_id = ?, updated_at = ? WHERE hall_id IS NULL').run(byName.id, stamp);
+    return byName;
+  }
+  conn.prepare('UPDATE tables SET hall_id = ?, updated_at = ? WHERE hall_id IS NULL').run(DEFAULT_HALL_ID, stamp);
+  return { id: DEFAULT_HALL_ID, name };
+}
+
+/**
+ * Directory for SQLite, backups, and other runtime files.
+ *
+ * `FLO_DATA_DIR` is the VPS / headless path so `flo.db` is not left in a
+ * laptop AppData folder. Desktop Electron installs keep using `userData`.
+ */
+export function getDataDir(): string {
+  const fromEnv = process.env.FLO_DATA_DIR?.trim();
+  if (fromEnv) {
+    const resolved = path.resolve(fromEnv);
+    fs.mkdirSync(resolved, { recursive: true });
+    return resolved;
+  }
+  const projectRoot = path.basename(path.dirname(__dirname)) === 'dist'
+    ? path.resolve(__dirname, '../..')
+    : path.resolve(__dirname, '..');
+  return app.isPackaged ? app.getPath('userData') : projectRoot;
+}
+
 export function getDbPath(): string {
   // Native Playwright owns this path for its disposable local Electron run.
   // It is intentionally opt-in and has no effect on normal desktop installs.
   if (process.env.FLO_E2E_DB_PATH) return path.resolve(process.env.FLO_E2E_DB_PATH);
-  const projectRoot = path.basename(path.dirname(__dirname)) === 'dist'
-    ? path.resolve(__dirname, '../..')
-    : path.resolve(__dirname, '..');
-  const userDataPath = app.isPackaged ? app.getPath('userData') : projectRoot;
-  return path.join(userDataPath, 'flo.db');
+  return path.join(getDataDir(), 'flo.db');
 }
 
 function getBackupDir(): string {
+  if (process.env.FLO_DATA_DIR?.trim()) {
+    return path.join(getDataDir(), 'backups');
+  }
   const userDataPath = app.getPath('userData');
   return path.join(userDataPath, 'backups');
 }
@@ -737,6 +793,14 @@ export function isKotPrintingEnabled(): boolean {
  */
 export function isAutoPrintKotEnabled(): boolean {
   return getSettingValue('auto_print_kot') !== 'false';
+}
+
+/**
+ * Kitchen warehouse stock deduction. Defaults on so existing tech cards keep
+ * deducting. Owners can turn it off and run POS without counting remainders.
+ */
+export function isKitchenWarehouseEnabled(): boolean {
+  return getSettingValue('kitchen_warehouse_enabled') !== 'false';
 }
 
 export function upsertTelemetryLastPing(): void {
@@ -4317,6 +4381,113 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 84,
+    name: 'kitchen_warehouse_optional',
+    up: () => {
+      insertSettingIfMissing('kitchen_warehouse_enabled', 'true');
+    },
+  },
+  {
+    version: 85,
+    name: 'add_product_dish_discounts',
+    up: () => {
+      const columns = getColumns(db, 'products');
+      if (!columns.includes('discount_type')) {
+        db.exec(`ALTER TABLE products ADD COLUMN discount_type TEXT`);
+      }
+      if (!columns.includes('discount_value')) {
+        db.exec(`ALTER TABLE products ADD COLUMN discount_value REAL DEFAULT 0`);
+      }
+      if (!columns.includes('discount_applies_to')) {
+        db.exec(`ALTER TABLE products ADD COLUMN discount_applies_to TEXT`);
+      }
+    },
+  },
+  {
+    version: 86,
+    name: 'add_halls_and_table_hall_id',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS halls (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL UNIQUE,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          is_default INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+      const tableColumns = getColumns(db, 'tables');
+      if (!tableColumns.includes('hall_id')) {
+        db.exec(`ALTER TABLE tables ADD COLUMN hall_id TEXT`);
+      }
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_tables_hall_id ON tables(hall_id)`);
+      ensureDefaultHall(db);
+    },
+  },
+  {
+    version: 87,
+    name: 'table_number_unique_per_hall',
+    up: () => {
+      const defaultHall = ensureDefaultHall(db);
+      const stamp = now();
+      db.prepare(`UPDATE tables SET hall_id = ?, updated_at = ? WHERE hall_id IS NULL OR TRIM(hall_id) = ''`)
+        .run(defaultHall.id, stamp);
+
+      const dupes = db.prepare(`
+        SELECT hall_id, number FROM tables
+        GROUP BY hall_id, number
+        HAVING COUNT(*) > 1
+      `).all() as { hall_id: string; number: string }[];
+      for (const dupe of dupes) {
+        const rows = db.prepare(
+          'SELECT id, number FROM tables WHERE hall_id = ? AND number = ? ORDER BY created_at ASC, id ASC',
+        ).all(dupe.hall_id, dupe.number) as { id: string; number: string }[];
+        for (let i = 1; i < rows.length; i++) {
+          let n = i + 1;
+          let candidate = `${rows[i].number}-${n}`;
+          while (db.prepare('SELECT 1 FROM tables WHERE hall_id = ? AND number = ?').get(dupe.hall_id, candidate)) {
+            n += 1;
+            candidate = `${rows[i].number}-${n}`;
+          }
+          db.prepare('UPDATE tables SET number = ?, updated_at = ? WHERE id = ?').run(candidate, stamp, rows[i].id);
+        }
+      }
+
+      db.exec(`
+        PRAGMA foreign_keys = OFF;
+        CREATE TABLE tables_hall_number_unique (
+          id TEXT PRIMARY KEY,
+          number TEXT NOT NULL,
+          capacity INTEGER DEFAULT 4,
+          status TEXT DEFAULT 'available',
+          floor TEXT,
+          section TEXT,
+          hall_id TEXT,
+          position_x REAL,
+          position_y REAL,
+          kitchen_station_id TEXT,
+          is_active INTEGER DEFAULT 1,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(hall_id, number)
+        );
+        INSERT INTO tables_hall_number_unique (
+          id, number, capacity, status, floor, section, hall_id,
+          position_x, position_y, kitchen_station_id, is_active, created_at, updated_at
+        )
+        SELECT
+          id, number, capacity, status, floor, section, hall_id,
+          position_x, position_y, kitchen_station_id, is_active, created_at, updated_at
+        FROM tables;
+        DROP TABLE tables;
+        ALTER TABLE tables_hall_number_unique RENAME TO tables;
+        CREATE INDEX IF NOT EXISTS idx_tables_hall_id ON tables(hall_id);
+        PRAGMA foreign_keys = ON;
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4495,6 +4666,9 @@ function createSchema(): void {
       -- cb_percent explicitly, and NULL is written as NULL.
       cb_percent REAL DEFAULT 0,
       tags TEXT,
+      discount_type TEXT,
+      discount_value REAL DEFAULT 0,
+      discount_applies_to TEXT,
       deleted_at TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -4561,20 +4735,32 @@ function createSchema(): void {
       FOREIGN KEY (station_id) REFERENCES kitchen_stations(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS halls (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_default INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS tables (
       id TEXT PRIMARY KEY,
-      number TEXT NOT NULL UNIQUE,
+      number TEXT NOT NULL,
       capacity INTEGER DEFAULT 4,
       status TEXT DEFAULT 'available',
       floor TEXT,
       section TEXT,
+      hall_id TEXT,
       position_x REAL,
       position_y REAL,
       kitchen_station_id TEXT,
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(hall_id, number)
     );
+    CREATE INDEX IF NOT EXISTS idx_tables_hall_id ON tables(hall_id);
 
     CREATE TABLE IF NOT EXISTS customers (
       id TEXT PRIMARY KEY,
@@ -5118,6 +5304,7 @@ function seedInstallDefaults(): void {
   insert('telemetry_scope', 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics');
   insert('diagnostics_consent', 'true');
   insert('kds_enabled', 'true');
+  insert('kitchen_warehouse_enabled', 'true');
   insert('server_app_enabled', 'true');
   insert('kot_printing_enabled', 'true');
   insert('auto_print_kot', 'true');

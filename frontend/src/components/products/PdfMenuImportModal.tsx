@@ -62,6 +62,7 @@ export default function PdfMenuImportModal({
   const [skippedCount, setSkippedCount] = useState(0);
   const [replaceMenu, setReplaceMenu] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [ocrText, setOcrText] = useState('');
 
   const reset = () => {
     setFileName('');
@@ -72,6 +73,7 @@ export default function PdfMenuImportModal({
     setSkippedCount(0);
     setReplaceMenu(false);
     setResult(null);
+    setOcrText('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -82,6 +84,16 @@ export default function PdfMenuImportModal({
 
   const handleFile = async (file: File | undefined) => {
     if (!file) return;
+    const lower = file.name.toLowerCase();
+    if (
+      lower.endsWith('.heic')
+      || lower.endsWith('.heif')
+      || file.type === 'image/heic'
+      || file.type === 'image/heif'
+    ) {
+      toast.error(t('pdfHeicUnsupported'));
+      return;
+    }
     if (file.size > MAX_PDF_MB * 1024 * 1024) {
       toast.error(t('pdfTooLarge', { size: MAX_PDF_MB }));
       return;
@@ -91,10 +103,11 @@ export default function PdfMenuImportModal({
     setItems([]);
     setWarnings([]);
     setSkippedCount(0);
+    setOcrText('');
     setParsing(true);
     try {
       const file_base64 = await fileToBase64(file);
-      const res = await api.post('/menu-pdf/parse', { file_base64, pdf_base64: file_base64 });
+      const res = await api.post('/menu-pdf/parse', { file_base64, pdf_base64: file_base64 }, { timeout: 180_000 });
       const parsed = (res.data.items || []) as Omit<PreviewItem, 'selected'>[];
       setItems(parsed.map((item) => ({
         name: item.name || '',
@@ -105,12 +118,17 @@ export default function PdfMenuImportModal({
       })));
       setWarnings(Array.isArray(res.data.warnings) ? res.data.warnings : []);
       setSkippedCount(Number(res.data.skipped_count) || 0);
+      setOcrText(typeof res.data.ocr_text === 'string' ? res.data.ocr_text : '');
       if (!parsed.length) {
         toast.error(t('pdfNoItems'));
       }
     } catch (error: unknown) {
-      const message = (error as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      toast.error(message || t('pdfParseFailed'));
+      const payload = (error as { response?: { data?: { error?: string; code?: string } } })?.response?.data;
+      if (payload?.code === 'heic_unsupported') {
+        toast.error(t('pdfHeicUnsupported'));
+      } else {
+        toast.error(payload?.error || t('pdfParseFailed'));
+      }
     } finally {
       setParsing(false);
     }
@@ -188,6 +206,13 @@ export default function PdfMenuImportModal({
               <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                 <AlertCircle size={16} className="mt-0.5 shrink-0" />
                 {warnings.includes('ocr_used') ? t('pdfOcrHint') : t('pdfScannedHint')}
+              </div>
+            )}
+
+            {items.length === 0 && ocrText.trim() && (
+              <div className="rounded-xl border border-border bg-muted px-4 py-3">
+                <p className="text-sm font-medium text-foreground mb-2">{t('pdfOcrTextHint')}</p>
+                <pre className="text-xs text-muted-foreground whitespace-pre-wrap max-h-40 overflow-auto">{ocrText}</pre>
               </div>
             )}
 

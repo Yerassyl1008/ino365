@@ -253,10 +253,11 @@ router.delete('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, r
     if (!printer) return res.status(404).json({ error: 'Printer not found' });
 
     db.transaction(() => {
-      const count = (db.prepare('SELECT COUNT(*) as count FROM printers').get() as any).count;
-      if (printer.is_default && count === 1) {
-        throw Object.assign(new Error('Cannot delete the only default printer'), { statusCode: 409 });
-      }
+      // Stations keep a printer_id FK (ON DELETE SET NULL). Clear it first so
+      // older DBs without that action, or a missing FK rewrite, cannot 500.
+      db.prepare(
+        'UPDATE kitchen_stations SET printer_id = NULL, updated_at = ? WHERE printer_id = ?'
+      ).run(now(), req.params.id);
       db.prepare('DELETE FROM printers WHERE id = ?').run(req.params.id);
       if (printer.is_default) {
         const replacement = db.prepare('SELECT id FROM printers ORDER BY created_at, name LIMIT 1').get() as any;

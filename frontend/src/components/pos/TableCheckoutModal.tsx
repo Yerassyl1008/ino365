@@ -12,6 +12,7 @@ import type { Table, Order, Bill, OrderItem } from '@/lib/types';
 import { SplitCheckModal } from '@/components/pos/SplitCheckModal';
 import { useAuthStore } from '@/store/auth';
 import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
+import { tableDisplayName, tableNeedsHallPrefix } from '@shared/table-label';
 
 interface Props {
   table: Table;
@@ -235,6 +236,8 @@ export default function TableCheckoutModal({
     : t('stayHours', { hours: Math.floor(stayMins / 60), minutes: stayMins % 60 });
   const availableTables = floorTables.filter((row) => row.id !== table.id && row.status === 'available');
   const mergeTables = floorTables.filter((row) => row.id !== table.id && row.status === 'occupied');
+  const qualifyHall = tableNeedsHallPrefix(floorTables.length ? floorTables : [table]);
+  const currentTableName = tableDisplayName(table.name, table.hall_name, qualifyHall);
 
   return (
     <>
@@ -243,7 +246,7 @@ export default function TableCheckoutModal({
         <div className="flex justify-between items-center p-5 border-b border-border">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-bold text-foreground">{table.name}</h2>
+              <h2 className="text-lg font-bold text-foreground">{currentTableName}</h2>
               <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
                 isPrecheck
                   ? 'bg-yellow-100 text-yellow-800'
@@ -343,10 +346,10 @@ export default function TableCheckoutModal({
             >
               <option value="">{t('selectTargetTable')}</option>
               {availableTables.map((row) => (
-                <option key={`move-${row.id}`} value={row.id}>{row.name} · {t('tableLegendFree')}</option>
+                <option key={`move-${row.id}`} value={row.id}>{tableDisplayName(row.name, row.hall_name, qualifyHall)} · {t('tableLegendFree')}</option>
               ))}
               {mergeTables.map((row) => (
-                <option key={`merge-${row.id}`} value={row.id}>{row.name} · {t('tableLegendOccupied')}</option>
+                <option key={`merge-${row.id}`} value={row.id}>{tableDisplayName(row.name, row.hall_name, qualifyHall)} · {t('tableLegendOccupied')}</option>
               ))}
             </select>
             <Button variant="outline" disabled={generating || !availableTables.some((row) => row.id === targetTableId)} onClick={handleTransfer}>

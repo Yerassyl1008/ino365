@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { generateShortId, now } from '../db';
+import { generateShortId, isKitchenWarehouseEnabled, now } from '../db';
 
 export const INGREDIENT_UNITS = ['g', 'kg', 'ml', 'l', 'pcs'] as const;
 export type IngredientUnit = (typeof INGREDIENT_UNITS)[number];
@@ -119,6 +119,7 @@ export function consumeOrderItemIngredients(
     userId?: string | null;
   },
 ): void {
+  if (!isKitchenWarehouseEnabled()) return;
   const needs = expandProductRecipe(db, params.productId, params.quantity);
   if (needs.length === 0) return;
 
@@ -184,6 +185,7 @@ export function redeductOrderItemIngredients(
     userId?: string | null;
   },
 ): void {
+  if (!isKitchenWarehouseEnabled()) return;
   const lines = db.prepare(`
     SELECT d.ingredient_id, d.quantity, i.name, i.stock_quantity
     FROM order_item_ingredient_deductions d
@@ -315,4 +317,46 @@ export function applyIngredientCount(db: KitchenDb, ingredientId: string, quanti
   if (delta !== 0) {
     insertMovement(db, { ingredientId, quantity: delta, reason: 'count', userId, note });
   }
+}
+
+export function applyIngredientCountBatch(
+  db: KitchenDb,
+  items: Array<{ ingredient_id?: unknown; quantity?: unknown }>,
+  userId?: string | null,
+  note?: string | null,
+): { counted: number; skipped: number } {
+  let counted = 0;
+  let skipped = 0;
+  const seen = new Set<string>();
+
+  for (const item of items) {
+    const ingredientId = typeof item.ingredient_id === 'string' ? item.ingredient_id.trim() : '';
+    if (!ingredientId) {
+      skipped += 1;
+      continue;
+    }
+    if (item.quantity === '' || item.quantity === null || item.quantity === undefined) {
+      skipped += 1;
+      continue;
+    }
+    if (seen.has(ingredientId)) throw stockError('Duplicate ingredient in count');
+    seen.add(ingredientId);
+
+    const nextQty = roundQty(Number(item.quantity));
+    if (!Number.isFinite(nextQty) || nextQty < 0) throw stockError('Counted quantity must be 0 or greater');
+
+    const ingredient = db.prepare('SELECT id, stock_quantity FROM ingredients WHERE id = ?')
+      .get(ingredientId) as { id: string; stock_quantity: number } | undefined;
+    if (!ingredient) throw stockError('Ingredient not found', 404);
+
+    if (roundQty(nextQty - Number(ingredient.stock_quantity)) === 0) {
+      skipped += 1;
+      continue;
+    }
+
+    applyIngredientCount(db, ingredientId, nextQty, userId, note);
+    counted += 1;
+  }
+
+  return { counted, skipped };
 }

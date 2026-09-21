@@ -29,8 +29,8 @@ const {
   closeDatabase,
   now,
 } = require('./helpers/test-setup');
-const { parseMenuText, decodeMenuFileBase64 } = require('../main/services/menu-pdf-parse');
-const { sniffImageKind, extractEmbeddedJpegs } = require('../main/services/menu-ocr');
+const { parseMenuText, decodeMenuFileBase64, parseMenuFile } = require('../main/services/menu-pdf-parse');
+const { sniffImageKind, extractEmbeddedJpegs, tessdataDir, prepareTessLangDir } = require('../main/services/menu-ocr');
 const { menuPdfRoutes } = require('../main/routes/menu-pdf');
 
 function makeSimplePdf(lines: string[]): Buffer {
@@ -103,6 +103,25 @@ async function main() {
   assertEqual(russian.items[2].price, 1200, 'reads the price from the next line');
   assert(russian.skipped.some((row: { reason: string }) => row.reason === 'header_or_contact'), 'skips wifi/contact junk');
 
+  const ocrLike = parseMenuText([
+    'НАПИТКИ',
+    'Капучино 1500 Латте 1800',
+    'Эспрессо 900 tr',
+    '1500',
+    'Американо',
+    'Стейк 300г 4500',
+  ].join('\n'));
+  assertEqual(ocrLike.items.length, 5, 'parses OCR-style single-space columns and price-first lines');
+  assertEqual(ocrLike.items[0].name, 'Капучино', 'left dish in a single-space pair');
+  assertEqual(ocrLike.items[0].price, 1500, 'left price in a single-space pair');
+  assertEqual(ocrLike.items[1].name, 'Латте', 'right dish in a single-space pair');
+  assertEqual(ocrLike.items[1].price, 1800, 'right price in a single-space pair');
+  assertEqual(ocrLike.items[2].price, 900, 'accepts OCR-garbled тг as tr');
+  assertEqual(ocrLike.items[3].name, 'Американо', 'joins a price line before the dish name');
+  assertEqual(ocrLike.items[3].price, 1500, 'price-first OCR order');
+  assertEqual(ocrLike.items[4].name, 'Стейк 300г', 'keeps a weight in the name');
+  assertEqual(ocrLike.items[4].price, 4500, 'does not treat grams as the price');
+
   const twoCol = parseMenuText('Latte 1500  Mocha 1600');
   assertEqual(twoCol.items.length, 2, 'splits two priced items on one line');
   assertEqual(twoCol.items[0].name, 'Latte', 'left column name');
@@ -155,6 +174,24 @@ async function main() {
     assertEqual(extractEmbeddedJpegs(jpegInPdf).length, 0, 'ignores tiny embedded JPEGs');
     const photoB64 = decodeMenuFileBase64(`data:image/jpeg;base64,${jpeg.toString('base64')}`);
     assertEqual(sniffImageKind(photoB64), 'jpeg', 'strips a photo data URL');
+    const heic = Buffer.concat([Buffer.alloc(4), Buffer.from('ftypheic', 'ascii'), Buffer.alloc(8)]);
+    assertEqual(sniffImageKind(heic), 'heic', 'detects HEIC/HEIF ftyp brand');
+    try {
+      await parseMenuFile(heic);
+      assert(false, 'HEIC parse should throw');
+    } catch (error: any) {
+      assertEqual(error.code, 'heic_unsupported', 'rejects iPhone HEIC before OCR');
+      assertEqual(error.statusCode, 400, 'HEIC rejection is a client error');
+    }
+
+    const tessDir = tessdataDir();
+    assert(
+      fs.existsSync(path.join(tessDir, 'rus.traineddata.gz')) || fs.existsSync(path.join(tessDir, 'rus.traineddata')),
+      'finds bundled Russian tessdata',
+    );
+    const prepared = prepareTessLangDir();
+    assert(fs.existsSync(path.join(prepared, 'rus.traineddata')), 'unpacks rus.traineddata for Electron cache load');
+    assert(fs.existsSync(path.join(prepared, 'eng.traineddata')), 'unpacks eng.traineddata for Electron cache load');
 
     console.log('\n─── Import merge (default) ───');
     const merged = await api(baseUrl, '/api/menu-pdf/import', {

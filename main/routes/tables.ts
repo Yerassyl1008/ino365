@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, parseRowJson, withTxn } from '../db';
+import { getDatabase, now, parseRowJson, withTxn, ensureDefaultHall } from '../db';
 import { randomUUID } from 'crypto';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
@@ -36,11 +36,49 @@ function itemReadinessForOrder(db: ReturnType<typeof getDatabase>, orderId: numb
   return readiness;
 }
 
+function resolveHallId(db: ReturnType<typeof getDatabase>, hallId: unknown): string {
+  const fallback = ensureDefaultHall(db).id;
+  if (typeof hallId !== 'string' || !hallId.trim()) return fallback;
+  const hall = db.prepare('SELECT id FROM halls WHERE id = ?').get(hallId.trim());
+  return hall ? hallId.trim() : fallback;
+}
+
+function tableNumberConflict(
+  db: ReturnType<typeof getDatabase>,
+  tableNumber: string,
+  hallId: string,
+  excludeId?: string,
+) {
+  const existing = (excludeId
+    ? db.prepare('SELECT * FROM tables WHERE number = ? AND hall_id = ? AND id != ?').get(tableNumber, hallId, excludeId)
+    : db.prepare('SELECT * FROM tables WHERE number = ? AND hall_id = ?').get(tableNumber, hallId)
+  ) as { is_active?: number } | undefined;
+  if (!existing) return null;
+  if (existing.is_active === 0) {
+    return {
+      error: `Table ${tableNumber} already exists in this hall but is deactivated. Please reactivate it from the list.`,
+      reason: 'table_number_inactive_in_hall',
+    };
+  }
+  return {
+    error: 'Table number already exists in this hall',
+    reason: 'table_number_exists_in_hall',
+  };
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  const code = String((error as { code?: string })?.code || '');
+  const message = String((error as { message?: string })?.message || '');
+  return code.includes('CONSTRAINT') || /UNIQUE constraint failed: tables\./i.test(message);
+}
+
 function tableShape(table: any, activeOrder?: any, db?: ReturnType<typeof getDatabase>) {
   const currentOrder = activeOrder || null;
   return {
     ...table,
     name: table.number,
+    hall_id: table.hall_id || null,
+    hall_name: table.hall_name || null,
     activeOrder: currentOrder,
     current_order: currentOrder,
     order_total: currentOrder ? currentOrder.total : null,
@@ -53,30 +91,39 @@ function tableShape(table: any, activeOrder?: any, db?: ReturnType<typeof getDat
 router.get('/', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    let query = 'SELECT * FROM tables WHERE 1=1';
+    let query = `
+      SELECT t.*, h.name AS hall_name
+      FROM tables t
+      LEFT JOIN halls h ON h.id = t.hall_id
+      WHERE 1=1
+    `;
     const params: any[] = [];
 
     if (req.query.status) {
-      query += ' AND status = ?';
+      query += ' AND t.status = ?';
       params.push(req.query.status);
     }
+    if (req.query.hall_id) {
+      query += ' AND t.hall_id = ?';
+      params.push(req.query.hall_id);
+    }
     if (req.query.floor) {
-      query += ' AND floor = ?';
+      query += ' AND t.floor = ?';
       params.push(req.query.floor);
     }
     if (req.query.section) {
-      query += ' AND section = ?';
+      query += ' AND t.section = ?';
       params.push(req.query.section);
     }
     if (req.query.kitchen_station_id) {
-      query += ' AND kitchen_station_id = ?';
+      query += ' AND t.kitchen_station_id = ?';
       params.push(req.query.kitchen_station_id);
     }
     if (req.query.active === 'true' || req.query.active === '1') {
-      query += ' AND is_active = 1';
+      query += ' AND t.is_active = 1';
     }
 
-    query += ' ORDER BY number';
+    query += ' ORDER BY h.sort_order ASC, t.number';
 
     const rows = db.prepare(query).all(...params);
     // Normalize: frontend expects `name`, schema column is `number`
@@ -91,7 +138,12 @@ router.get('/', (req: Request, res: Response) => {
 router.get('/:id', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);
+    const table = db.prepare(`
+      SELECT t.*, h.name AS hall_name
+      FROM tables t
+      LEFT JOIN halls h ON h.id = t.hall_id
+      WHERE t.id = ?
+    `).get(req.params.id);
     if (!table) {
       return res.status(404).json({ error: 'Table not found' });
     }
@@ -109,7 +161,7 @@ router.get('/:id', (req: Request, res: Response) => {
 router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     // Accept `number` (schema column) or `name` (legacy frontend field)
-    const { number, name, capacity, floor, section, position_x, position_y, kitchen_station_id } = req.body;
+    const { number, name, capacity, floor, section, hall_id, position_x, position_y, kitchen_station_id } = req.body;
     const tableNumber = number || name;
 
     if (!tableNumber) {
@@ -117,27 +169,42 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
     }
 
     const db = getDatabase();
-    const existing = db.prepare('SELECT * FROM tables WHERE number = ?').get(tableNumber) as any;
-    if (existing) {
-      if (existing.is_active === 0) {
-        return res.status(400).json({ error: `Table ${tableNumber} already exists but is deactivated. Please reactivate it from the list.` });
-      } else {
-        return res.status(400).json({ error: 'Table number already exists' });
+    if (hall_id && typeof hall_id === 'string' && hall_id.trim()) {
+      const hall = db.prepare('SELECT id FROM halls WHERE id = ?').get(hall_id.trim());
+      if (!hall) {
+        return res.status(400).json({ error: 'Hall not found', reason: 'hall_not_found' });
       }
     }
 
+    const hallId = resolveHallId(db, hall_id);
+    const conflict = tableNumberConflict(db, tableNumber, hallId);
+    if (conflict) {
+      return res.status(400).json(conflict);
+    }
+
     const tableId = `tbl-${randomUUID().slice(0, 8)}`;
-    const result = db.prepare(`
-      INSERT INTO tables (id, number, capacity, floor, section, position_x, position_y, kitchen_station_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    db.prepare(`
+      INSERT INTO tables (id, number, capacity, floor, section, hall_id, position_x, position_y, kitchen_station_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      tableId, tableNumber, capacity || 4, floor || null, section || null,
+      tableId, tableNumber, capacity || 4, floor || null, section || null, hallId,
       position_x || null, position_y || null, kitchen_station_id || null, now(), now()
     );
 
-    const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(tableId);
+    const table = db.prepare(`
+      SELECT t.*, h.name AS hall_name
+      FROM tables t
+      LEFT JOIN halls h ON h.id = t.hall_id
+      WHERE t.id = ?
+    `).get(tableId);
     res.status(201).json({ table });
   } catch (error: any) {
+    if (isUniqueConstraintError(error)) {
+      return res.status(400).json({
+        error: 'Table number already exists in this hall',
+        reason: 'table_number_exists_in_hall',
+      });
+    }
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
@@ -145,7 +212,7 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
 
 router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
-    const { number, name, capacity, floor, section, position_x, position_y, kitchen_station_id } = req.body;
+    const { number, name, capacity, floor, section, hall_id, position_x, position_y, kitchen_station_id } = req.body;
     const tableNumber = number || name;
     const db = getDatabase();
 
@@ -154,11 +221,24 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
       return res.status(404).json({ error: 'Table not found' });
     }
 
-    if (tableNumber) {
-      const existing = db.prepare('SELECT * FROM tables WHERE number = ? AND id != ?').get(tableNumber, req.params.id);
-      if (existing) {
-        return res.status(400).json({ error: 'Table number already exists' });
+    let nextHallId = undefined as string | undefined;
+    if (hall_id !== undefined) {
+      if (hall_id && typeof hall_id === 'string' && hall_id.trim()) {
+        const hall = db.prepare('SELECT id FROM halls WHERE id = ?').get(hall_id.trim());
+        if (!hall) {
+          return res.status(400).json({ error: 'Hall not found', reason: 'hall_not_found' });
+        }
+        nextHallId = hall_id.trim();
+      } else {
+        nextHallId = ensureDefaultHall(db).id;
       }
+    }
+
+    const nextNumber = tableNumber || (table as { number: string }).number;
+    const nextHall = nextHallId || (table as { hall_id?: string }).hall_id || ensureDefaultHall(db).id;
+    const conflict = tableNumberConflict(db, nextNumber, nextHall, req.params.id as string);
+    if (conflict) {
+      return res.status(400).json(conflict);
     }
 
     db.prepare(`
@@ -167,16 +247,28 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
         capacity = COALESCE(?, capacity),
         floor = COALESCE(?, floor),
         section = COALESCE(?, section),
+        hall_id = COALESCE(?, hall_id),
         position_x = COALESCE(?, position_x),
         position_y = COALESCE(?, position_y),
         kitchen_station_id = COALESCE(?, kitchen_station_id),
         updated_at = ?
       WHERE id = ?
-    `).run(tableNumber, capacity, floor, section, position_x, position_y, kitchen_station_id, now(), req.params.id);
+    `).run(tableNumber, capacity, floor, section, nextHallId, position_x, position_y, kitchen_station_id, now(), req.params.id);
 
-    const updated = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);
+    const updated = db.prepare(`
+      SELECT t.*, h.name AS hall_name
+      FROM tables t
+      LEFT JOIN halls h ON h.id = t.hall_id
+      WHERE t.id = ?
+    `).get(req.params.id);
     res.json({ table: updated });
   } catch (error: any) {
+    if (isUniqueConstraintError(error)) {
+      return res.status(400).json({
+        error: 'Table number already exists in this hall',
+        reason: 'table_number_exists_in_hall',
+      });
+    }
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }

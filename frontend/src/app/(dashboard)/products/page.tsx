@@ -5,19 +5,20 @@ import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle, ArrowLeft, ChevronRight } from 'lucide-react';
 import type { Product, Category, AddonGroup, Ingredient } from '@/lib/types';
-import TagBadge, { tagLabel } from '@/components/pos/DietaryBadge';
-import { parseDbTimestamp } from '@/lib/utils';
+import { tagLabel } from '@/components/pos/DietaryBadge';
 import ImageUploader from '@/components/products/ImageUploader';
 import { PdfMenuImportButton } from '@/components/products/PdfMenuImportModal';
-import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
+import MenuProductTable, { productBelongsToCategory } from '@/components/products/MenuProductTable';
+import { getCurrencySymbol, getCountryByCode, resolveDisplayCurrency } from '@/lib/countries';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useConfirm } from '@/hooks/use-confirm';
-import { nameToColor } from '@/lib/image-utils';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
 import RecipeEditor, { type RecipeLineDraft } from '@/components/warehouse/RecipeEditor';
+import DishPrice from '@/components/pos/DishPrice';
+import { ALL_ORDER_TYPES, visibleDishPrices, type OrderType } from '@shared/dish-discount';
 
 type PosKey = keyof AppConfig['Messages']['pos'];
 type ProductsKey = keyof AppConfig['Messages']['products'];
@@ -65,8 +66,6 @@ type TabType = 'products' | 'categories' | 'addons';
 const MENU_TABLE_WRAP = '@container bg-card rounded-xl border border-border overflow-x-auto';
 const MENU_TH = 'px-3 py-2.5 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap';
 const MENU_TD = 'px-3 py-2.5';
-const MENU_COL_ADDONS = 'hidden @min-[900px]:table-cell';
-const MENU_COL_SECONDARY = 'hidden @min-[1200px]:table-cell';
 const MENU_ACTIONS_TH = `${MENU_TH} sticky end-0 z-20 bg-muted text-end min-w-24 border-s border-border`;
 const MENU_ACTIONS_TD = `${MENU_TD} sticky end-0 z-10 bg-card group-hover:bg-muted text-end whitespace-nowrap min-w-24 border-s border-border`;
 
@@ -97,6 +96,7 @@ export default function ProductsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [openedCategoryId, setOpenedCategoryId] = useState<string | null>(null);
   const { confirm, ConfirmDialog } = useConfirm();
   const [editingAddonGroup, setEditingAddonGroup] = useState<AddonGroup | null>(null);
   const [categoryForm, setCategoryForm] = useState({ name: '', description: '', color: '', is_active: true });
@@ -113,6 +113,9 @@ export default function ProductsPage() {
     customTag: '',
     addon_group_ids: [] as string[],
     image_url: null as string | null,
+    discount_type: 'percentage' as 'percentage' | 'amount',
+    discount_value: '',
+    discount_applies_to: [...ALL_ORDER_TYPES] as OrderType[],
   });
   const [imageTouched, setImageTouched] = useState(false);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
@@ -132,7 +135,10 @@ export default function ProductsPage() {
   const [bulkTaxCategoryId, setBulkTaxCategoryId] = useState('');
   const [bulkTaxApplying, setBulkTaxApplying] = useState(false);
 
-  const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
+  const currency = getCurrencySymbol(
+    resolveDisplayCurrency(currentTenant?.country, currentTenant?.currency),
+    getCountryByCode(currentTenant?.country ?? '')?.locale ?? 'ru-KZ',
+  );
   const fmt = useFormatCurrency();
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const isOwnerOrManager = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
@@ -277,6 +283,7 @@ export default function ProductsPage() {
       tax_category_id: '', tax_behavior: 'country_default', description: '',
       track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
       tags: [], customTag: '', addon_group_ids: [], image_url: null,
+      discount_type: 'percentage', discount_value: '', discount_applies_to: [...ALL_ORDER_TYPES],
     });
     setImageTouched(false);
     setEditingProduct(null);
@@ -318,6 +325,11 @@ export default function ProductsPage() {
       customTag: '',
       addon_group_ids: product.addon_groups?.map((g) => g.id) || [],
       image_url: product.has_image ? 'EXISTING' : null,
+      discount_type: product.discount_type === 'amount' ? 'amount' : 'percentage',
+      discount_value: product.discount_value && Number(product.discount_value) > 0 ? String(product.discount_value) : '',
+      discount_applies_to: product.discount_applies_to && product.discount_applies_to.length > 0
+        ? product.discount_applies_to
+        : [...ALL_ORDER_TYPES],
     });
     setShowForm(true);
     if (!isRestaurant) {
@@ -345,6 +357,21 @@ export default function ProductsPage() {
         return;
       }
     }
+    const discountValue = form.discount_value === '' ? 0 : Number(form.discount_value);
+    if (form.discount_value !== '') {
+      if (!Number.isFinite(discountValue) || discountValue < 0) {
+        toast.error(t('invalidDishDiscount'));
+        return;
+      }
+      if (form.discount_type === 'percentage' && discountValue > 100) {
+        toast.error(t('invalidDishDiscount'));
+        return;
+      }
+      if (discountValue > 0 && form.discount_applies_to.length === 0) {
+        toast.error(t('dishDiscountNeedChannel'));
+        return;
+      }
+    }
     try {
       const cbPercentVal: number | null = form.cb_percent === '' ? null : Number(form.cb_percent);
 
@@ -368,6 +395,9 @@ export default function ProductsPage() {
         is_active: form.is_active,
         tags: form.tags.length > 0 ? form.tags : null,
         addon_group_ids: form.addon_group_ids,
+        discount_type: discountValue > 0 ? form.discount_type : null,
+        discount_value: discountValue > 0 ? discountValue : 0,
+        discount_applies_to: discountValue > 0 ? form.discount_applies_to : [],
       };
 
       // Only include image_url when the user actually touched the image field
@@ -458,6 +488,7 @@ export default function ProductsPage() {
     try {
       await api.delete(`/categories/${id}`);
       toast.success(t('categoryDeleted'));
+      setOpenedCategoryId((cur) => (cur === String(id) ? null : cur));
       fetchData();
     } catch (err: unknown) {
       const e = err as { response?: { status?: number; data?: { error?: string; productCount?: number } } };
@@ -475,6 +506,7 @@ export default function ProductsPage() {
     try {
       await api.delete(`/categories/${catDeleteModal.id}?action=reassign&reassign_to=${catReassignTo}`);
       toast.success(t('reassignAndDelete'));
+      setOpenedCategoryId((cur) => (cur === String(catDeleteModal.id) ? null : cur));
       setCatDeleteModal({ open: false, id: null, name: '', productCount: 0 });
       fetchData();
     } catch {
@@ -487,6 +519,7 @@ export default function ProductsPage() {
     try {
       await api.delete(`/categories/${catDeleteModal.id}?action=delete_all`);
       toast.success(t('categoryAndProductsDeleted'));
+      setOpenedCategoryId((cur) => (cur === String(catDeleteModal.id) ? null : cur));
       setCatDeleteModal({ open: false, id: null, name: '', productCount: 0 });
       fetchData();
     } catch {
@@ -537,6 +570,10 @@ export default function ProductsPage() {
   const updateAddonItem = (idx: number, field: string, value: string | number) => setAddonList((prev) => prev.map((a, i) => i === idx ? { ...a, [field]: value } : a));
   const removeAddonItem = (idx: number) => setAddonList((prev) => prev.filter((_, i) => i !== idx));
 
+  const openedCategory = openedCategoryId
+    ? categories.find((c) => String(c.id) === String(openedCategoryId)) ?? null
+    : null;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -552,14 +589,14 @@ export default function ProductsPage() {
       </div>
 
       <div className="flex gap-1 mb-6 border-b">
-        <button onClick={() => setActiveTab('products')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'products' ? 'border-brand text-brand' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+        <button onClick={() => { setOpenedCategoryId(null); setActiveTab('products'); }} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'products' ? 'border-brand text-brand' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
           <Package size={16} /> {t('tabProducts')}
         </button>
         <button onClick={() => setActiveTab('categories')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'categories' ? 'border-brand text-brand' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
           <Folder size={16} /> {t('tabCategories')}
         </button>
         {isRestaurant && (
-          <button onClick={() => setActiveTab('addons')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'addons' ? 'border-brand text-brand' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+          <button onClick={() => { setOpenedCategoryId(null); setActiveTab('addons'); }} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'addons' ? 'border-brand text-brand' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
             <Puzzle size={16} /> {t('tabAddonGroups')}
           </button>
         )}
@@ -582,153 +619,22 @@ export default function ProductsPage() {
             </Button>
           </div>
 
-      {/* Product Table */}
-      <div className={MENU_TABLE_WRAP}>
-        <table className="w-max min-w-full">
-          <thead className="bg-muted">
-            <tr>
-              <th className={`${MENU_TH} text-start`}>{t('columnProduct')}</th>
-              <th className={`${MENU_TH} text-start`}>{t('columnCategory')}</th>
-              <th className={`${MENU_TH} text-center ${MENU_COL_ADDONS}`}>{t('columnAddons')}</th>
-              <th className={`${MENU_TH} text-end`}>{t('columnPrice')}</th>
-              <th className={`${MENU_TH} text-start ${MENU_COL_SECONDARY}`}>{t('columnTax')}</th>
-              {loyaltyEnabled && <th className={`${MENU_TH} text-start ${MENU_COL_SECONDARY}`}>{t('columnCashback')}</th>}
-              <th className={`${MENU_TH} text-center ${MENU_COL_SECONDARY}`}>{t('columnStock')}</th>
-              <th className={`${MENU_TH} text-center`}>{t('columnStatus')}</th>
-              <th className={MENU_ACTIONS_TH}>{t('columnActions')}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {products.map((product) => {
-              const parentCat = categories.find((c) => String(c.id) === String(product.category_id || product.category?.id));
-              const isCategoryInactive = Boolean(parentCat && !parentCat.is_active);
-              const matchedTaxCategory = taxCategories.find((tc) => tc.id === product.tax_category_id);
-              const taxLabel = product.tax_category_id
-                ? (matchedTaxCategory ? taxCategoryOptionLabel(matchedTaxCategory) : product.tax_category_id)
-                : '—';
-              return (
-              <tr key={product.id} className="group hover:bg-muted">
-                <td className={`${MENU_TD} max-w-[220px]`}>
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 relative flex items-center justify-center">
-                      <div
-                        className="absolute inset-0 flex items-center justify-center"
-                        style={{ backgroundColor: nameToColor(product.name) }}
-                      >
-                        <span className="text-sm font-bold text-white/80">
-                          {product.name.substring(0, 2).toUpperCase()}
-                        </span>
-                      </div>
-                      {product.has_image && (
-                        <img 
-                          src={`${api.defaults.baseURL}/products/${product.id}/image?t=${product.updated_at ? parseDbTimestamp(product.updated_at).getTime() : 0}`}
-                          alt="" 
-                          className="absolute inset-0 w-full h-full object-cover"
-                          onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                        />
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-medium text-foreground truncate">{product.name}</p>
-                      {product.sku && <p className="text-xs text-gray-400 mt-0.5">{t('skuLabel', { sku: product.sku })}</p>}
-                      {product.barcode && <p className="text-xs text-gray-400 mt-0.5 font-mono">{t('barcodeLabel', { barcode: product.barcode })}</p>}
-                      {product.tags && product.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1.5">
-                          {product.tags.map((tag: string) => <TagBadge key={tag} tag={tag} />)}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </td>
-                <td className={`${MENU_TD} text-sm text-muted-foreground`}>
-                  <div className="flex flex-col gap-0.5">
-                    <span>{product.category?.name || '—'}</span>
-                    {isCategoryInactive && (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 w-fit" title="Parent category is inactive; product is hidden on POS">
-                        <AlertTriangle size={11} className="shrink-0" /> {t('categoryInactiveBadge')}
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td className={`${MENU_TD} text-center ${MENU_COL_ADDONS}`}>
-                  {product.addon_groups && product.addon_groups.length > 0 ? (
-                    <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
-                      {t('addonGroupCount', { count: product.addon_groups.length })}
-                    </span>
-                  ) : (
-                    <span className="text-gray-400 text-sm">—</span>
-                  )}
-                </td>
-                <td className={`${MENU_TD} text-end whitespace-nowrap`}>
-                  <p className="font-medium">{fmt(Number(product.price))}</p>
-                  {product.cost_price != null && product.cost_price > 0 && <p className="text-xs text-gray-400">{t('costLabel', { value: fmt(Number(product.cost_price)) })}</p>}
-                </td>
-                <td className={`${MENU_TD} text-sm text-muted-foreground ${MENU_COL_SECONDARY}`}>
-                  <div className="flex flex-col gap-0.5">
-                    <span>{taxLabel}</span>
-                    {!product.tax_category_id && taxCategories.length > 0 && (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 w-fit" title={t('notTaxedTooltip')}>
-                        <AlertTriangle size={11} className="shrink-0" /> {t('notTaxedBadge')}
-                      </span>
-                    )}
-                  </div>
-                </td>
-                {loyaltyEnabled && (
-                  <td className={`${MENU_TD} text-sm text-muted-foreground whitespace-nowrap ${MENU_COL_SECONDARY}`}>
-                    {product.cb_percent === null || product.cb_percent === undefined ? (
-                      <span>{globalCashbackPercent}% <span className="text-gray-400 text-xs">({t('cashbackGlobalBadge')})</span></span>
-                    ) : product.cb_percent === 0 ? (
-                      <span className="text-gray-400">0%</span>
-                    ) : (
-                      <span>{product.cb_percent}%</span>
-                    )}
-                  </td>
-                )}
-                <td className={`${MENU_TD} text-center ${MENU_COL_SECONDARY}`}>
-                  {product.track_inventory ? (
-                    <span className={`text-sm font-medium ${product.stock_quantity <= (product.low_stock_threshold || 0) ? 'text-red-600' : 'text-foreground'}`}>
-                      {product.stock_quantity <= 0 ? tPos('outOfStock') : product.stock_quantity}
-                    </span>
-                  ) : (
-                    <span className="text-gray-400 text-sm">—</span>
-                  )}
-                </td>
-                <td className={`${MENU_TD} text-center`}>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    product.is_active ? 'bg-green-100 text-green-800' : 'bg-muted text-muted-foreground'
-                  }`}>
-                    {product.is_active ? tCommon('active') : tCommon('inactive')}
-                  </span>
-                  {product.is_active && isCategoryInactive && (
-                    <span className="text-[10px] text-amber-600 font-medium block mt-1">{t('hiddenOnPos')}</span>
-                  )}
-                </td>
-                <td className={MENU_ACTIONS_TD}>
-                  <div className="flex gap-1 justify-end">
-                    {isOwnerOrManager && (
-                      <>
-                        <button onClick={() => openEdit(product)} className="p-1.5 text-gray-400 hover:text-brand">
-                          <Pencil size={16} />
-                        </button>
-                        <button onClick={() => handleDelete(product.id)} className="p-1.5 text-gray-400 hover:text-red-600">
-                          <Trash2 size={16} />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </td>
-              </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {products.length === 0 && (
-          <p className="text-center text-muted-foreground py-12">{t('empty')}</p>
-        )}
-      </div>
+      <MenuProductTable
+            products={products}
+            categories={categories}
+            taxCategories={taxCategories}
+            loyaltyEnabled={loyaltyEnabled}
+            globalCashbackPercent={globalCashbackPercent}
+            isOwnerOrManager={isOwnerOrManager}
+            emptyMessage={t('empty')}
+            onEdit={openEdit}
+            onDelete={handleDelete}
+          />
+        </>
+      )}
 
       {/* Product Form Modal */}
-      {showForm && (
+      {showForm && (activeTab === 'products' || !!editingProduct) && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-card rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
             <div className="flex justify-between items-center p-6 border-b border-border shrink-0">
@@ -834,6 +740,104 @@ export default function ProductsPage() {
                   <input type="number" step="0.01" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })}
                     onWheel={(e) => e.currentTarget.blur()}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                </div>
+              </div>
+              <div className="bg-muted p-4 rounded-xl space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="block text-sm font-medium text-foreground">{t('dishDiscount')}</label>
+                  {form.discount_value !== '' && Number(form.price) > 0 && (
+                    <DishPrice
+                      original={Number(form.price) || 0}
+                      discounted={visibleDishPrices({
+                        price: Number(form.price) || 0,
+                        discount_type: form.discount_type,
+                        discount_value: Number(form.discount_value) || 0,
+                        discount_applies_to: form.discount_applies_to,
+                      }).discounted}
+                      className="text-sm font-bold text-brand"
+                    />
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">{t('dishDiscountHint')}</p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, discount_type: 'percentage' })}
+                    className={`min-h-9 px-3 rounded-lg text-sm font-medium ${form.discount_type === 'percentage' ? 'bg-brand text-white' : 'bg-card border border-border text-foreground'}`}
+                  >
+                    {t('dishDiscountPercent')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, discount_type: 'amount' })}
+                    className={`min-h-9 px-3 rounded-lg text-sm font-medium ${form.discount_type === 'amount' ? 'bg-brand text-white' : 'bg-card border border-border text-foreground'}`}
+                  >
+                    {t('dishDiscountAmount')}
+                  </button>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max={form.discount_type === 'percentage' ? 100 : undefined}
+                    value={form.discount_value}
+                    onChange={(e) => setForm({ ...form, discount_value: e.target.value })}
+                    onWheel={(e) => e.currentTarget.blur()}
+                    placeholder={form.discount_type === 'percentage' ? '%' : currency}
+                    className="w-28 px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                  />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-foreground mb-2">{t('dishDiscountAppliesTo')}</p>
+                  <div className="flex flex-wrap gap-3">
+                    {ALL_ORDER_TYPES.map((type) => {
+                      const label = type === 'dine_in'
+                        ? tPos('orderTypeDineIn')
+                        : type === 'takeaway'
+                          ? tPos('orderTypeTakeaway')
+                          : type === 'delivery'
+                            ? tPos('orderTypeDelivery')
+                            : tPos('orderTypeOnline');
+                      return (
+                        <label key={type} className="inline-flex items-center gap-2 text-sm text-foreground">
+                          <input
+                            type="checkbox"
+                            checked={form.discount_applies_to.includes(type)}
+                            onChange={(e) => {
+                              const next = e.target.checked
+                                ? [...form.discount_applies_to, type]
+                                : form.discount_applies_to.filter((channel) => channel !== type);
+                              setForm({ ...form, discount_applies_to: ALL_ORDER_TYPES.filter((channel) => next.includes(channel)) });
+                            }}
+                            className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
+                          />
+                          {label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    <button
+                      type="button"
+                      onClick={() => setForm({ ...form, discount_applies_to: [...ALL_ORDER_TYPES] })}
+                      className="text-xs font-medium text-brand hover:underline"
+                    >
+                      {t('dishDiscountAll')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setForm({ ...form, discount_applies_to: ['dine_in', 'delivery'] })}
+                      className="text-xs font-medium text-brand hover:underline"
+                    >
+                      {t('dishDiscountCafeDelivery')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setForm({ ...form, discount_value: '', discount_type: 'percentage', discount_applies_to: [...ALL_ORDER_TYPES] })}
+                      className="text-xs font-medium text-muted-foreground hover:underline"
+                    >
+                      {t('dishDiscountClear')}
+                    </button>
+                  </div>
                 </div>
               </div>
               {loyaltyEnabled && (
@@ -1020,11 +1024,37 @@ export default function ProductsPage() {
           </div>
         </div>
       )}
-        </>
-      )}
 
       {activeTab === 'categories' && (
         <>
+          {openedCategory ? (
+            <>
+              <div className="flex items-center gap-3 mb-4 min-w-0">
+                <Button variant="outline" onClick={() => setOpenedCategoryId(null)}>
+                  <ArrowLeft size={16} className="rtl-flip" /> {t('backToCategories')}
+                </Button>
+                <h2 className="text-lg font-bold text-foreground truncate">{openedCategory.name}</h2>
+                {!openedCategory.is_active && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 w-fit shrink-0">
+                    <AlertTriangle size={11} className="shrink-0" /> {t('categoryInactiveBadge')}
+                  </span>
+                )}
+              </div>
+              <MenuProductTable
+                products={products.filter((p) => productBelongsToCategory(p, openedCategory.id))}
+                categories={categories}
+                taxCategories={taxCategories}
+                loyaltyEnabled={loyaltyEnabled}
+                globalCashbackPercent={globalCashbackPercent}
+                isOwnerOrManager={isOwnerOrManager}
+                hideCategory
+                emptyMessage={t('categoryDishesEmpty')}
+                onEdit={openEdit}
+                onDelete={handleDelete}
+              />
+            </>
+          ) : (
+            <>
           <div className="flex justify-end gap-2 mb-4">
             <Button variant="outline" onClick={() => openCsvModal('categories')}>
               <FileSpreadsheet size={16} className="me-1" /> CSV
@@ -1048,8 +1078,22 @@ export default function ProductsPage() {
                 {categories.map((cat) => {
                   const colorObj = CATEGORY_COLORS.find((c) => c.key === cat.color);
                   return (
-                    <tr key={cat.id} className="group hover:bg-muted">
-                      <td className={`${MENU_TD} font-medium text-foreground`}>{cat.name}</td>
+                    <tr
+                      key={cat.id}
+                      className="group hover:bg-muted cursor-pointer"
+                      onClick={() => setOpenedCategoryId(String(cat.id))}
+                    >
+                      <td className={`${MENU_TD} font-medium text-foreground`}>
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-2 text-start font-medium text-foreground hover:text-brand"
+                          aria-label={t('openCategory')}
+                          onClick={(e) => { e.stopPropagation(); setOpenedCategoryId(String(cat.id)); }}
+                        >
+                          {cat.name}
+                          <ChevronRight size={16} className="text-gray-400 shrink-0 rtl-flip" />
+                        </button>
+                      </td>
                       <td className={MENU_TD}>
                         {colorObj ? (
                           <span className={`inline-flex px-2 py-1 rounded-lg text-xs font-medium ${colorObj.bg} ${colorObj.text}`}>{t(colorObj.labelKey)}</span>
@@ -1057,15 +1101,15 @@ export default function ProductsPage() {
                       </td>
                       <td className={`${MENU_TD} text-center`}>
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${cat.is_active ? 'bg-green-100 text-green-800' : 'bg-muted text-muted-foreground'}`}>
-                          {cat.is_active ? 'Active' : 'Inactive'}
+                          {cat.is_active ? tCommon('active') : tCommon('inactive')}
                         </span>
                       </td>
-                      <td className={MENU_ACTIONS_TD}>
+                      <td className={MENU_ACTIONS_TD} onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-1 justify-end">
                           {isOwnerOrManager && (
                             <>
-                              <button onClick={() => openEditCategory(cat)} className="p-1.5 text-gray-400 hover:text-brand"><Pencil size={16} /></button>
-                              <button onClick={() => handleCategoryDelete(cat.id, cat.name)} className="p-1.5 text-gray-400 hover:text-red-600"><Trash2 size={16} /></button>
+                              <button type="button" onClick={() => openEditCategory(cat)} className="p-1.5 text-gray-400 hover:text-brand"><Pencil size={16} /></button>
+                              <button type="button" onClick={() => handleCategoryDelete(cat.id, cat.name)} className="p-1.5 text-gray-400 hover:text-red-600"><Trash2 size={16} /></button>
                             </>
                           )}
                         </div>
@@ -1077,8 +1121,10 @@ export default function ProductsPage() {
             </table>
             {categories.length === 0 && <p className="text-center text-muted-foreground py-12">{t('categoryEmpty')}</p>}
           </div>
+            </>
+          )}
 
-          {showForm && (
+          {showForm && !editingProduct && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
               <div className="bg-card rounded-2xl p-6 w-full max-w-md">
                 <div className="flex justify-between items-center mb-4">

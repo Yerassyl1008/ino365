@@ -1,0 +1,15 @@
+# Caddy obtains Let's Encrypt certificates automatically.
+# Replace example.kz with your ps.kz (or other) domain.
+
+kassa.example.kz {
+	reverse_proxy 127.0.0.1:3001
+}
+
+# Waiter phones on 4G. Same app is also at https://kassa.example.kz/server-standalone
+waiter.example.kz {
+	reverse_proxy 127.0.0.1:3003
+}
+
+kds.example.kz {
+	reverse_proxy 127.0.0.1:3002
+}

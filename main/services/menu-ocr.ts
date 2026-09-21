@@ -3,12 +3,15 @@
  */
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import zlib from 'node:zlib';
 import { pathToFileURL } from 'node:url';
 import { createWorker, PSM, type Worker } from 'tesseract.js';
 
 const MAX_OCR_PAGES = 12;
 const MAX_OCR_IMAGE_BYTES = 12 * 1024 * 1024;
+const MAX_OCR_SIDE = 2000;
 
 function packagedResources(): string | null {
   try {
@@ -18,6 +21,18 @@ function packagedResources(): string | null {
     }
   } catch {
     // tests stub electron; unpackaged `npm start`
+  }
+  return null;
+}
+
+function userDataDir(): string | null {
+  try {
+    const electron = require('electron') as { app?: { getPath?: (name: string) => string } };
+    if (typeof electron?.app?.getPath === 'function') {
+      return electron.app.getPath('userData');
+    }
+  } catch {
+    // tests / plain node
   }
   return null;
 }
@@ -42,11 +57,62 @@ export function tessdataDir(): string {
   return candidates[1] || candidates[0];
 }
 
+function hasLangFile(dir: string, lang: string): boolean {
+  return fs.existsSync(path.join(dir, `${lang}.traineddata.gz`)) || fs.existsSync(path.join(dir, `${lang}.traineddata`));
+}
+
 function hasLangData(dir: string): boolean {
-  return (
-    (fs.existsSync(path.join(dir, 'rus.traineddata.gz')) || fs.existsSync(path.join(dir, 'rus.traineddata')))
-    && (fs.existsSync(path.join(dir, 'eng.traineddata.gz')) || fs.existsSync(path.join(dir, 'eng.traineddata')))
-  );
+  return hasLangFile(dir, 'rus') && hasLangFile(dir, 'eng');
+}
+
+/**
+ * Tesseract.js treats a filesystem `langPath` as an HTTP URL when `is-electron`
+ * is true, then node-fetch throws "Only absolute URLs are supported".
+ * Unpack gzip models to a real `.traineddata` cache and load via cachePath.
+ */
+export function prepareTessLangDir(): string {
+  const src = tessdataDir();
+  if (!hasLangData(src)) {
+    throw Object.assign(
+      new Error('OCR language files are missing. Reinstall the app or run scripts/ensure-tessdata.cjs'),
+      { statusCode: 500 },
+    );
+  }
+
+  const uncompressed =
+    fs.existsSync(path.join(src, 'rus.traineddata'))
+    && fs.existsSync(path.join(src, 'eng.traineddata'));
+  if (uncompressed) return src;
+
+  const dest = path.join(userDataDir() || os.tmpdir(), 'flo-tessdata');
+  fs.mkdirSync(dest, { recursive: true });
+  for (const lang of ['eng', 'rus']) {
+    const outFile = path.join(dest, `${lang}.traineddata`);
+    try {
+      if (fs.existsSync(outFile) && fs.statSync(outFile).size > 10_000) continue;
+    } catch {
+      // rewrite below
+    }
+    const raw = path.join(src, `${lang}.traineddata`);
+    if (fs.existsSync(raw)) {
+      fs.copyFileSync(raw, outFile);
+      continue;
+    }
+    const gz = path.join(src, `${lang}.traineddata.gz`);
+    fs.writeFileSync(outFile, zlib.gunzipSync(fs.readFileSync(gz)));
+  }
+  return dest;
+}
+
+function workerScriptPath(): string {
+  try {
+    return require.resolve('tesseract.js/src/worker-script/node/index.js');
+  } catch {
+    return path.join(
+      path.dirname(require.resolve('tesseract.js/package.json')),
+      'src/worker-script/node/index.js',
+    );
+  }
 }
 
 let workerPromise: Promise<Worker> | null = null;
@@ -54,24 +120,22 @@ let workerPromise: Promise<Worker> | null = null;
 async function getWorker(): Promise<Worker> {
   if (!workerPromise) {
     workerPromise = (async () => {
-      const langPath = tessdataDir();
-      if (!hasLangData(langPath)) {
-        throw Object.assign(
-          new Error('OCR language files are missing. Reinstall the app or run scripts/ensure-tessdata.cjs'),
-          { statusCode: 500 },
-        );
-      }
-      const gzip = fs.existsSync(path.join(langPath, 'rus.traineddata.gz'));
+      const langPath = prepareTessLangDir();
       const worker = await createWorker('rus+eng', 1, {
+        workerPath: workerScriptPath(),
         langPath,
         cachePath: langPath,
-        cacheMethod: 'none',
-        gzip,
+        cacheMethod: 'readOnly',
+        gzip: false,
         logger: () => undefined,
+        errorHandler: (error) => {
+          console.error('[menu-ocr] tesseract:', error);
+        },
       });
       await worker.setParameters({
-        tessedit_pageseg_mode: PSM.SINGLE_BLOCK,
+        tessedit_pageseg_mode: PSM.AUTO,
         preserve_interword_spaces: '1',
+        user_defined_dpi: '300',
       });
       return worker;
     })().catch((error) => {
@@ -82,7 +146,7 @@ async function getWorker(): Promise<Worker> {
   return workerPromise;
 }
 
-export function sniffImageKind(buffer: Buffer): 'jpeg' | 'png' | 'webp' | 'gif' | 'bmp' | null {
+export function sniffImageKind(buffer: Buffer): 'jpeg' | 'png' | 'webp' | 'gif' | 'bmp' | 'heic' | null {
   if (!Buffer.isBuffer(buffer) || buffer.length < 12) return null;
   if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'jpeg';
   if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) return 'png';
@@ -94,7 +158,18 @@ export function sniffImageKind(buffer: Buffer): 'jpeg' | 'png' | 'webp' | 'gif' 
   ) {
     return 'webp';
   }
+  if (buffer.length >= 12 && buffer.subarray(4, 8).toString('ascii') === 'ftyp') {
+    const brand = buffer.subarray(8, 12).toString('ascii').toLowerCase();
+    if (/heic|heix|hevc|hevx|heim|heis|mif1|msf1/.test(brand)) return 'heic';
+  }
   return null;
+}
+
+export function heicUnsupportedError(): Error & { statusCode: number; code: string } {
+  return Object.assign(
+    new Error('HEIC photos are not supported. Save the photo as JPEG and try again.'),
+    { statusCode: 400, code: 'heic_unsupported' },
+  );
 }
 
 /** Pull embedded JPEGs out of scan-to-PDF files (common phone "PDF photo"). */
@@ -195,13 +270,55 @@ export async function pdfPagesAsImages(buffer: Buffer): Promise<Buffer[]> {
   }
 }
 
+async function downscaleForOcr(image: Buffer): Promise<Buffer> {
+  try {
+    const { loadImage, createCanvas } = require('@napi-rs/canvas') as {
+      loadImage: (buf: Buffer) => Promise<{ width: number; height: number }>;
+      createCanvas: (w: number, h: number) => {
+        getContext: (t: '2d') => { drawImage: (img: unknown, x: number, y: number, w: number, h: number) => void };
+        toBuffer: (t: string) => Buffer;
+      };
+    };
+    const img = await loadImage(image);
+    const maxSide = Math.max(img.width, img.height);
+    if (!maxSide || maxSide <= MAX_OCR_SIDE) return image;
+    const scale = MAX_OCR_SIDE / maxSide;
+    const width = Math.max(1, Math.round(img.width * scale));
+    const height = Math.max(1, Math.round(img.height * scale));
+    const canvas = createCanvas(width, height);
+    canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+    return canvas.toBuffer('image/png');
+  } catch {
+    return image;
+  }
+}
+
+function ocrFailure(error: unknown): Error {
+  const message = String((error as Error)?.message || error || '');
+  if (/missing|traineddata/i.test(message)) {
+    return Object.assign(
+      new Error('OCR language files are missing. Reinstall the app or run scripts/ensure-tessdata.cjs'),
+      { statusCode: 500 },
+    );
+  }
+  return Object.assign(
+    new Error('Could not read text from this photo. Try a clearer JPEG or PNG.'),
+    { statusCode: 500 },
+  );
+}
+
 async function recognizeOne(image: Buffer): Promise<string> {
   if (image.length > MAX_OCR_IMAGE_BYTES) {
     throw Object.assign(new Error('Photo is too large for OCR'), { statusCode: 400 });
   }
-  const worker = await getWorker();
-  const result = await worker.recognize(image);
-  return String(result?.data?.text || '').trim();
+  try {
+    const prepared = await downscaleForOcr(image);
+    const worker = await getWorker();
+    const result = await worker.recognize(prepared);
+    return String(result?.data?.text || '').trim();
+  } catch (error) {
+    throw ocrFailure(error);
+  }
 }
 
 export async function ocrImages(images: Buffer[]): Promise<string> {
@@ -216,6 +333,7 @@ export async function ocrImages(images: Buffer[]): Promise<string> {
 
 export async function ocrImage(buffer: Buffer): Promise<string> {
   const kind = sniffImageKind(buffer);
+  if (kind === 'heic') throw heicUnsupportedError();
   if (!kind) {
     throw Object.assign(new Error('File is not a supported photo (JPEG, PNG, WebP, BMP)'), { statusCode: 400 });
   }

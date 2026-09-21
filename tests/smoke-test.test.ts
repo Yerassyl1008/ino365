@@ -16,6 +16,7 @@ Module._load = function (requestName: string, parent: unknown, isMain: boolean) 
 
 import { startServer, stopServer, getServerPort } from '../main/server';
 import { startKdsServer, stopKdsServer, getKdsPort } from '../main/kds-server';
+import { startServerApp, stopServerApp, getServerAppPort } from '../main/server-app';
 import { initDatabase, closeDatabase, getDatabase } from '../main/db';
 
 async function run() {
@@ -30,6 +31,7 @@ async function run() {
   initDatabase();
   await startServer();
   await startKdsServer();
+  await startServerApp();
 
   try {
     // 1. Health checks on both ports
@@ -42,6 +44,12 @@ async function run() {
     const res2 = await request(`http://127.0.0.1:${kdsPort}`).get('/api/health');
     assert(res2.status === 200, 'KDS Server health check responds with 200');
     assert(res2.body.status === 'ok', 'KDS Server health check body is ok');
+
+    const waiterPort = getServerAppPort();
+    const waiterHealth = await request(`http://127.0.0.1:${waiterPort}`).get('/api/health');
+    assert(waiterHealth.status === 200, 'Server App health check responds with 200');
+    const waiterPin = await request(`http://127.0.0.1:${waiterPort}`).post('/api/auth/pin-login').send({});
+    assert(waiterPin.status === 400, 'Server App PIN login route exists');
 
     // 2. Seed owner user and test setup/auth state on Main API
     const db = getDatabase();
@@ -62,6 +70,7 @@ async function run() {
   } finally {
     stopServer();
     stopKdsServer();
+    stopServerApp();
     closeDatabase();
     try {
       fs.rmSync(testDir, { recursive: true, force: true });

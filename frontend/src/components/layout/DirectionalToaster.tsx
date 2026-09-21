@@ -33,6 +33,7 @@ export function DirectionalToaster() {
     <Toaster
       key={rtl ? 'rtl' : 'ltr'}
       position={rtl ? 'top-left' : 'top-right'}
+      containerClassName="flo-toaster"
       containerStyle={{
         top: 'calc(var(--flo-sidebar-block-start, 0px) + 16px)',
       }}

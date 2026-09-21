@@ -25,7 +25,7 @@ const SAFE_HOST = /^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(?::\d{1,5})?$/;
 export function buildCspHeader(req: Request): string {
   const host = req.get('Host');
   const connectSrc = host && SAFE_HOST.test(host)
-    ? `'self' http://${host} ws://${host} wss://${host}`
+    ? `'self' http://${host} https://${host} ws://${host} wss://${host}`
     : "'self'";
   return [
     "default-src 'self'",

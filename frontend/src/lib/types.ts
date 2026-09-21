@@ -74,6 +74,9 @@ export interface Product {
   tax_rate: number;
   tax_category_id?: string | null;
   tax_behavior?: 'country_default' | 'inclusive' | 'exclusive' | 'exempt';
+  discount_type?: 'percentage' | 'amount' | null;
+  discount_value?: number | null;
+  discount_applies_to?: Array<'dine_in' | 'takeaway' | 'delivery' | 'online'> | null;
   track_inventory: boolean;
   stock_quantity: number;
   low_stock_threshold: number | null;
@@ -112,6 +115,14 @@ export interface Addon {
   sort_order: number;
 }
 
+export interface Hall {
+  id: string;
+  name: string;
+  sort_order: number;
+  is_default: boolean | number;
+  table_count?: number;
+}
+
 export interface Table {
   id: string;
   name: string;
@@ -120,6 +131,8 @@ export interface Table {
   kitchen_station_id: number | null;
   floor: string | null;
   section: string | null;
+  hall_id: string | null;
+  hall_name?: string | null;
   is_active: boolean;
   activeOrder?: Order | null;
   current_order?: Order | null;
@@ -193,6 +206,7 @@ export interface OrderItem {
   total: number;
   tax_breakdown?: { title: string; rate: number; amount: number }[] | null;
   tax_snapshot?: TaxSnapshot | null;
+  discount_amount?: number;
   addons: { id?: number | string | null; name: string; price?: number; quantity?: number }[] | null;
   special_instructions: string | null;
   course?: number;

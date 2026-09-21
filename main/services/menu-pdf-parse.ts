@@ -2,7 +2,7 @@
  * Offline PDF / photo menu extraction: text layer first, OCR for scans and photos.
  */
 
-import { ocrImage, ocrImages, pdfPagesAsImages, sniffImageKind } from './menu-ocr';
+import { heicUnsupportedError, ocrImage, ocrImages, pdfPagesAsImages, sniffImageKind } from './menu-ocr';
 
 export const MAX_PDF_BYTES = 15 * 1024 * 1024;
 export const MAX_PDF_PAGES = 40;
@@ -19,9 +19,10 @@ export interface ParseMenuResult {
   items: ParsedMenuItem[];
   skipped: { line: string; reason: string }[];
   warnings: string[];
+  rawText?: string;
 }
 
-const CURRENCY_TOKEN = String.raw`(?:₸|тг\.?|тнг|kzt|тенге|\$|€|£)`;
+const CURRENCY_TOKEN = String.raw`(?:₸|тг\.?|тнг|kzt|тенге|\$|€|£|т\/г|tr\.?|rr\.?)`;
 const NUMBER_TOKEN = String.raw`(?:\d{1,3}(?:[ \u00a0.,]\d{3})+|\d+)(?:[.,]\d{1,2})?`;
 const WEIGHT_TOKEN = /(?:\d+(?:[.,]\d+)?\s?(?:г|гр|грамм|kg|кг|ml|мл|l|л)\b)/i;
 const PRICE_TAIL = new RegExp(
@@ -82,43 +83,66 @@ function cleanName(raw: string): string {
     .trim();
 }
 
+function looksLikeName(value: string): boolean {
+  return /[\p{L}]/u.test(value);
+}
+
+function skipAsWeight(line: string, numberEnd: number): boolean {
+  // Do not use \b — it does not treat Cyrillic letters as word chars.
+  return /^\s*(?:грамм|гр|г|kg|кг|ml|мл|l|л)(?=$|[\s.,;:]|\d)/i.test(line.slice(numberEnd));
+}
+
 function extractItemsFromLine(line: string): { name: string; price: number; extra?: string }[] {
-  const results: { name: string; price: number; extra?: string }[] = [];
-  let rest = line.trim();
+  const trimmed = line.trim();
+  if (!trimmed) return [];
 
-  while (rest) {
-    const match = rest.match(PRICE_TAIL);
-    if (!match || match.index === undefined) break;
-    let price = parsePriceToken(match[1]);
-    if (price === null || !Number.isFinite(price) || price < 0) break;
-
-    let before = rest.slice(0, match.index).trim();
-    let extra: string | undefined;
-
-    const dual = before.match(/^(.*?)\s+(\d[\d \u00a0.,]*)\s*\/\s*$/);
-    if (dual) {
-      before = dual[1].trim();
-      extra = `${dual[2].replace(/\s+/g, ' ').trim()} / ${match[1].replace(/\s+/g, ' ').trim()}`;
-      const firstPrice = parsePriceToken(dual[2]);
-      if (firstPrice !== null) price = firstPrice;
+  const sizePair = trimmed.match(
+    new RegExp(String.raw`^(.*?)\s+(${NUMBER_TOKEN})\s*/\s*(${NUMBER_TOKEN})\s*${CURRENCY_TOKEN}?\s*$`, 'i'),
+  );
+  if (sizePair) {
+    const name = cleanName(sizePair[1]);
+    const firstPrice = parsePriceToken(sizePair[2]);
+    if (name && looksLikeName(name) && firstPrice !== null) {
+      return [{
+        name,
+        price: firstPrice,
+        extra: `${sizePair[2].replace(/\s+/g, ' ').trim()} / ${sizePair[3].replace(/\s+/g, ' ').trim()}`,
+      }];
     }
-
-    const parts = before.split(/\s{2,}|\t+/);
-    if (parts.length >= 2) {
-      const name = cleanName(parts.pop() || '');
-      if (name) results.unshift({ name, price, extra });
-      const next = parts.join('  ').trim();
-      if (!next || next === rest) break;
-      rest = next;
-      continue;
-    }
-
-    const name = cleanName(before);
-    if (name) results.unshift({ name, price, extra });
-    break;
   }
 
-  return results;
+  const numberRe = new RegExp(String.raw`(${NUMBER_TOKEN})(\s*${CURRENCY_TOKEN})?`, 'gi');
+  const matches: { start: number; end: number; price: number }[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = numberRe.exec(trimmed)) !== null) {
+    if (skipAsWeight(trimmed, match.index + match[1].length)) continue;
+    const price = parsePriceToken(match[1]);
+    if (price === null || !Number.isFinite(price) || price < 0 || price > 10_000_000) continue;
+    const hasCurrency = Boolean(match[2]);
+    const digits = match[1].replace(/\D/g, '');
+    if (!hasCurrency && price < 50 && digits.length < 3) continue;
+    matches.push({ start: match.index, end: match.index + match[0].length, price });
+  }
+
+  const results: { name: string; price: number; extra?: string }[] = [];
+  for (let i = 0; i < matches.length; i++) {
+    const prevEnd = i === 0 ? 0 : matches[i - 1].end;
+    const name = cleanName(trimmed.slice(prevEnd, matches[i].start));
+    if (!name || !looksLikeName(name)) continue;
+    if (/^(?:грамм|гр|г|kg|кг|ml|мл|l|л)$/i.test(name)) continue;
+    results.push({ name, price: matches[i].price });
+  }
+
+  if (results.length > 0) return results;
+
+  // Fallback: dotted leaders / trailing price on a single dish line.
+  const tail = trimmed.match(PRICE_TAIL);
+  if (!tail || tail.index === undefined) return [];
+  const price = parsePriceToken(tail[1]);
+  if (price === null || !Number.isFinite(price) || price < 0) return [];
+  const name = cleanName(trimmed.slice(0, tail.index));
+  if (!name || !looksLikeName(name)) return [];
+  return [{ name, price }];
 }
 
 export function parseMenuText(text: string, fallbackCategory = ''): ParseMenuResult {
@@ -137,8 +161,21 @@ export function parseMenuText(text: string, fallbackCategory = ''): ParseMenuRes
   const lines: string[] = [];
   for (let i = 0; i < rawLines.length; i++) {
     const line = rawLines[i];
+    const next = rawLines[i + 1];
     if (PRICE_ONLY.test(line) && lines.length > 0 && !PRICE_TAIL.test(lines[lines.length - 1])) {
       lines[lines.length - 1] = `${lines[lines.length - 1]}  ${line}`;
+      continue;
+    }
+    if (
+      PRICE_ONLY.test(line)
+      && next
+      && !PRICE_ONLY.test(next)
+      && !PRICE_TAIL.test(next)
+      && !isJunkLine(next)
+      && looksLikeName(next)
+    ) {
+      lines.push(`${next}  ${line}`);
+      i += 1;
       continue;
     }
     lines.push(line);
@@ -272,11 +309,13 @@ export async function parseMenuPdf(buffer: Buffer, fallbackCategory = ''): Promi
   if (ocr) parsed.warnings = ['ocr_used', ...parsed.warnings.filter((w) => w !== 'scanned_or_empty' && w !== 'no_items')];
   if (parsed.items.length === 0 && !parsed.warnings.includes('no_items')) parsed.warnings.push('no_items');
 
-  return { ...parsed, pages, textLength: usedText.trim().length, ocr };
+  return { ...parsed, pages, textLength: usedText.trim().length, ocr, rawText: usedText };
 }
 
 export async function parseMenuImage(buffer: Buffer, fallbackCategory = ''): Promise<ParseMenuResult & { pages: number; textLength: number; ocr: boolean }> {
-  if (!Buffer.isBuffer(buffer) || !sniffImageKind(buffer)) {
+  const kind = sniffImageKind(buffer);
+  if (kind === 'heic') throw heicUnsupportedError();
+  if (!Buffer.isBuffer(buffer) || !kind) {
     throw Object.assign(new Error('File is not a supported photo (JPEG, PNG, WebP, BMP)'), { statusCode: 400 });
   }
   if (buffer.length > MAX_PDF_BYTES) {
@@ -286,6 +325,7 @@ export async function parseMenuImage(buffer: Buffer, fallbackCategory = ''): Pro
   const parsed = parseMenuText(text, fallbackCategory);
   parsed.warnings = ['ocr_used', ...parsed.warnings.filter((w) => w !== 'no_items')];
   if (parsed.items.length === 0 && !parsed.warnings.includes('no_items')) parsed.warnings.push('no_items');
+  parsed.rawText = text;
   return { ...parsed, pages: 1, textLength: text.trim().length, ocr: true };
 }
 
@@ -293,7 +333,9 @@ export async function parseMenuFile(buffer: Buffer, fallbackCategory = ''): Prom
   if (buffer.length >= 5 && buffer.subarray(0, 5).toString('latin1') === '%PDF-') {
     return parseMenuPdf(buffer, fallbackCategory);
   }
-  if (sniffImageKind(buffer)) {
+  const kind = sniffImageKind(buffer);
+  if (kind === 'heic') throw heicUnsupportedError();
+  if (kind) {
     return parseMenuImage(buffer, fallbackCategory);
   }
   throw Object.assign(new Error('File must be a PDF or a photo (JPEG, PNG, WebP, BMP)'), { statusCode: 400 });

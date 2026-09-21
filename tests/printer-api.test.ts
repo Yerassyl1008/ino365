@@ -170,7 +170,7 @@ async function runTests() {
     assert(defaultId() !== currentDefault, 'the replacement is a different printer');
   }
 
-  // ── Test 6: deleting the default picks a replacement; deleting the only default is refused ──
+  // ── Test 6: deleting the default picks a replacement; the last printer can be removed ──
   console.log('\nTest 6: deleting the default printer');
   {
     const currentDefault = defaultId();
@@ -178,15 +178,18 @@ async function runTests() {
     assert(res.status === 200, `deleting the default with others returns 200 (got ${res.status})`);
     assert(defaultCount() === 1, 'a replacement default is chosen after deletion');
 
-    // Reduce to a single printer and confirm it cannot be deleted.
     const all = db.prepare('SELECT id FROM printers').all() as { id: string }[];
     for (const printer of all.slice(1)) {
       await request(app).delete(`/api/printers/${printer.id}`);
     }
     const onlyDefault = defaultId();
     assert(onlyDefault !== undefined, 'one printer remains and is default');
-    const refused = await request(app).delete(`/api/printers/${onlyDefault}`);
-    assert(refused.status === 409, `deleting the only default printer is refused (got ${refused.status})`);
+    const last = await request(app).delete(`/api/printers/${onlyDefault}`);
+    assert(last.status === 200, `deleting the last printer returns 200 (got ${last.status})`);
+    assert(defaultCount() === 0, 'no default remains after the last printer is deleted');
+    const restored = await request(app).post('/api/printers').send({ name: 'Restored Printer', connection_type: 'usb' });
+    assert(restored.status === 201, `recreating a printer after emptying the list returns 201 (got ${restored.status})`);
+    assert(defaultCount() === 1, 'the recreated printer becomes default');
   }
 
   // ── Test 7: kitchen stations validate printer identifiers ───────────────
@@ -210,6 +213,15 @@ async function runTests() {
     assert(clearUpdate.status === 200, `update with explicit null printer_id clears the assignment (got ${clearUpdate.status})`);
     const cleared = db.prepare('SELECT printer_id FROM kitchen_stations WHERE id = ?').get(stationId) as any;
     assert(cleared?.printer_id === null, 'the cleared station has a null printer_id');
+
+    const relink = await request(app).put(`/api/kitchen-stations/${stationId}`).send({ printer_id: printerId });
+    assert(relink.status === 200, `relinking the station printer returns 200 (got ${relink.status})`);
+    const deletedLinked = await request(app).delete(`/api/printers/${printerId}`);
+    assert(deletedLinked.status === 200, `deleting a printer still assigned to a station returns 200 (got ${deletedLinked.status})`);
+    const unassigned = db.prepare('SELECT printer_id FROM kitchen_stations WHERE id = ?').get(stationId) as any;
+    assert(unassigned?.printer_id === null, 'deleting the printer clears the station assignment');
+    const restoredAfterLink = await request(app).post('/api/printers').send({ name: 'After Station Unlink', connection_type: 'usb' });
+    assert(restoredAfterLink.status === 201, `recreating a printer after a linked delete returns 201 (got ${restoredAfterLink.status})`);
   }
 
   // ── Test 8: print-bill preview fallback when no printer exists ──────────

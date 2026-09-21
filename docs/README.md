@@ -19,6 +19,7 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 
 | Document | Description | Scope |
 | --- | --- | --- |
+| [vps-deploy.md](vps-deploy.md) | 24/7 VPS (Node + SQLite) so waiters and the owner use HTTPS from 4G without the cafe monoblock. systemd, Nginx/Caddy, DNS, printing caveat. | CURRENT |
 | [API.md](API.md) | Endpoint and WebSocket reference for the local Express and KDS servers (`:3001` and `:3002`). | CURRENT |
 | [linux.md](linux.md) | Linux package formats (AppImage, deb, rpm, Snap), FUSE setup, CUPS printing, and system tray behavior. | CURRENT |
 | [printers.md](printers.md) | ESC/POS printer configuration, network/USB/OS-queue/WebUSB connection types, kitchen stations, and troubleshooting. | CURRENT |

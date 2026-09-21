@@ -58,8 +58,9 @@ function normalizeImportItems(raw: unknown): ParsedMenuItem[] {
 
 function pdfErrorResponse(res: Response, error: unknown): Response {
   const status = (error as { statusCode?: number })?.statusCode;
+  const code = (error as { code?: string })?.code;
   if (status && status >= 400 && status < 500) {
-    return res.status(status).json({ error: (error as Error).message });
+    return res.status(status).json({ error: (error as Error).message, ...(code ? { code } : {}) });
   }
   console.error('[API] Menu PDF import failed:', error);
   return res.status(500).json({ error: 'Menu PDF import failed' });
@@ -78,6 +79,9 @@ router.post('/parse', requireRole(...ROLE_ACCESS.ownerManager), async (req: Requ
       pages: parsed.pages,
       text_length: parsed.textLength,
       ocr: parsed.ocr,
+      ocr_text: parsed.ocr && parsed.items.length === 0 && parsed.rawText
+        ? parsed.rawText.slice(0, 4000)
+        : undefined,
     });
   } catch (error) {
     return pdfErrorResponse(res, error);

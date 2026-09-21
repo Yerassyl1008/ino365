@@ -1,10 +1,11 @@
 import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
-import { getDatabase, now, generateShortId, getSettingValue, withTxn } from '../db';
+import { getDatabase, now, generateShortId, getSettingValue, isKitchenWarehouseEnabled, withTxn } from '../db';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import {
   applyIngredientCount,
+  applyIngredientCountBatch,
   applyIngredientReceive,
   applyIngredientWaste,
   isIngredientUnit,
@@ -54,7 +55,10 @@ router.get('/ingredients', (_req: Request, res: Response) => {
     const ingredients = db.prepare(`
       SELECT * FROM ingredients ORDER BY is_active DESC, name
     `).all();
-    res.json({ ingredients: ingredients.map(serializeIngredient) });
+    res.json({
+      ingredients: ingredients.map(serializeIngredient),
+      warehouse_enabled: isKitchenWarehouseEnabled(),
+    });
   } catch (error: any) {
     sendStockError(res, error);
   }
@@ -194,6 +198,18 @@ router.post('/ingredients/:id/count', warehouseWriteRateLimit, (req: Request, re
     withTxn(() => applyIngredientCount(db, String(req.params.id), req.body?.quantity, userIdOf(req), parseOptionalNote(req.body?.note)));
     const ingredient = db.prepare('SELECT * FROM ingredients WHERE id = ?').get(req.params.id);
     res.json({ ingredient: serializeIngredient(ingredient) });
+  } catch (error: any) {
+    sendStockError(res, error);
+  }
+});
+
+router.post('/count', warehouseWriteRateLimit, (req: Request, res: Response) => {
+  try {
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (items.length > 500) return res.status(400).json({ error: 'Too many count rows' });
+    const db = getDatabase();
+    const result = withTxn(() => applyIngredientCountBatch(db, items, userIdOf(req), parseOptionalNote(req.body?.note)));
+    res.json(result);
   } catch (error: any) {
     sendStockError(res, error);
   }

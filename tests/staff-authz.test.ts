@@ -38,6 +38,7 @@ const {
 } = require('./helpers/test-setup');
 const { staffRoutes } = require('../main/routes/staff');
 const { authRoutes, getJWTSecret } = require('../main/routes/auth');
+const { serverAppInfoRoutes } = require('../main/routes/server-app-info');
 
 function seedUser(db: any, id: string, role: string, pin = '1234') {
   const email = `${id}@test.local`;
@@ -71,7 +72,15 @@ async function main() {
   seedUser(db, 'server-target-145', 'server', '');
   seedUser(db, 'chef-target-145', 'chef', '');
 
-  const app = createApp({ '/api/staff': staffRoutes, '/api/auth': authRoutes });
+  const cashierAuth = seedUser(db, 'cashier-actor-145', 'cashier');
+  const serverAuth = seedUser(db, 'server-actor-145', 'server');
+  const chefAuth = seedUser(db, 'chef-actor-145', 'chef');
+
+  const app = createApp({
+    '/api/staff': staffRoutes,
+    '/api/auth': authRoutes,
+    '/api/server-app-info': serverAppInfoRoutes,
+  });
 
   console.log('\n── Manager boundaries ─────────────────────────────────────────');
   let result = await request(app).put('/api/staff/owner-145').set(managerAuth).send({
@@ -229,6 +238,7 @@ async function main() {
   console.log('\n── POS PIN access ──────────────────────────────────────────────');
   const {
     canAccessPos,
+    canShowWaiterQr,
     capabilityAllows,
     PERMISSION_CAPABILITIES,
     PIN_LOGIN_ROLES,
@@ -236,9 +246,15 @@ async function main() {
   const posCapability = PERMISSION_CAPABILITIES.find((capability: { id: string }) => capability.id === 'pos');
   const kotCapability = PERMISSION_CAPABILITIES.find((capability: { id: string }) => capability.id === 'kotPrinting');
   const payCapability = PERMISSION_CAPABILITIES.find((capability: { id: string }) => capability.id === 'billsPayments');
+  const waiterQrCapability = PERMISSION_CAPABILITIES.find((capability: { id: string }) => capability.id === 'waiterQr');
+  const reportsCapability = PERMISSION_CAPABILITIES.find((capability: { id: string }) => capability.id === 'reports');
+  const serviceChargeCapability = PERMISSION_CAPABILITIES.find((capability: { id: string }) => capability.id === 'serviceChargeReport');
   assert(posCapability, 'POS capability is defined');
   assert(kotCapability, 'KOT printing capability is defined');
   assert(payCapability, 'bills/payments capability is defined');
+  assert(waiterQrCapability, 'waiter QR capability is defined');
+  assert(reportsCapability, 'reports capability is defined');
+  assert(serviceChargeCapability, 'service charge report capability is defined');
 
   for (const role of ['owner', 'manager', 'cashier', 'server']) {
     assert(canAccessPos(role), `${role} can access the cashier POS`);
@@ -250,6 +266,39 @@ async function main() {
   assert(!capabilityAllows(payCapability, 'server'), 'waiter cannot take POS payments');
   assert(capabilityAllows(payCapability, 'cashier'), 'cashier can take POS payments');
   assertEqual(PIN_LOGIN_ROLES.join(','), 'owner,manager,cashier,server,chef', 'every staff role may PIN-login');
+
+  for (const role of ['owner', 'manager', 'cashier']) {
+    assert(canShowWaiterQr(role), `${role} can show the waiter QR on POS`);
+    assert(capabilityAllows(waiterQrCapability, role), `waiter QR matrix allows ${role}`);
+  }
+  assert(!canShowWaiterQr('server'), 'waiter cannot open the cashier waiter-QR panel');
+  assert(!canShowWaiterQr('chef'), 'chef cannot open the waiter-QR panel');
+  assert(!capabilityAllows(waiterQrCapability, 'server'), 'waiter QR matrix denies waiter');
+  assert(!capabilityAllows(reportsCapability, 'cashier'), 'cashier cannot view owner/manager reports');
+  assert(!capabilityAllows(reportsCapability, 'server'), 'waiter cannot view owner/manager reports');
+  assert(!capabilityAllows(serviceChargeCapability, 'cashier'), 'cashier cannot view owner service-charge share');
+  assert(!capabilityAllows(serviceChargeCapability, 'server'), 'waiter cannot view owner service-charge share');
+  assert(!capabilityAllows(serviceChargeCapability, 'manager'), 'manager cannot view owner service-charge share');
+  assert(capabilityAllows(serviceChargeCapability, 'owner'), 'owner can view the service-charge report');
+
+  console.log('\n── Waiter QR pairing API ───────────────────────────────────────');
+  result = await request(app).get('/api/server-app-info').set(cashierAuth);
+  assert(
+    result.status === 200 || result.status === 404,
+    `cashier can request waiter QR pairing info (got ${result.status})`,
+  );
+  if (result.status === 200) {
+    assert(typeof result.body.ip_url === 'string' && result.body.ip_url.startsWith('http://'), 'cashier QR payload includes the LAN Server App URL');
+  }
+  result = await request(app).get('/api/server-app-info').set(ownerAuth);
+  assert(
+    result.status === 200 || result.status === 404,
+    `owner can request waiter QR pairing info (got ${result.status})`,
+  );
+  result = await request(app).get('/api/server-app-info').set(serverAuth);
+  assertEqual(result.status, 403, 'waiter cannot fetch waiter QR pairing info');
+  result = await request(app).get('/api/server-app-info').set(chefAuth);
+  assertEqual(result.status, 403, 'chef cannot fetch waiter QR pairing info');
 
   const uniquePins: Array<[string, string, string]> = [
     ['pin-pos-owner', 'owner', '5555'],

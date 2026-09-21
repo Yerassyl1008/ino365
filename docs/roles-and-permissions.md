@@ -54,6 +54,7 @@ A check means the role is allowed to use the capability. A dash means it is not 
 | Integrations | Configure WhatsApp | ✓ | ✓ | — | — | — |
 | Integrations | Manage cloud and Google Drive settings | ✓ | ✓ | — | — | — |
 | Integrations | Manage cloud account and data controls | ✓ | — | — | — | — |
+| Integrations | Set up owner report access from the internet | ✓ | — | — | — | — |
 | System | Use database tools and backups | ✓ | — | — | — | — |
 | Orders | Use the standalone Server App | ✓ | ✓ | — | ✓ | — |
 | Support | Contact support and view diagnostics | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -64,7 +65,7 @@ A check means the role is allowed to use the capability. A dash means it is not 
 - **Owner and manager visibility:** The matrix is rendered only for an authenticated owner or manager on the Staff page. The API continues to enforce authorization independently; hiding a UI control is not a security boundary.
 - **KDS scope:** Chef access is further narrowed by assigned `category_ids` and kitchen stations. Owner and manager KDS access is unrestricted by category, subject to the KDS being enabled.
 - **Cashier POS (one PC):** Waiters, cashiers, managers, and owners sign in with PIN on the same KorgenKassa window. Switch user / Lock till returns to the PIN pad without signing out of Windows. Waiters can take and send orders (including kitchen tickets). Closing the check and taking payment stay with cashier, manager, or owner.
-- **Server App:** The standalone Server App is intentionally restricted to `server`, `manager`, and `owner` roles. It is separate from the dashboard navigation. Waiters can still use it on phones; the cashier monoblock is the POS.
+- **Server App:** The standalone Server App is intentionally restricted to `server`, `manager`, and `owner` roles. It is separate from the dashboard navigation. Waiters can use it on phones over HTTPS (VPS) or cafe Wi‑Fi; the hall till is optional and does not have to stay on.
 - **Staff management:** Managers can manage operational staff, but cannot modify or deactivate owner/manager accounts. Only owners can change roles for an existing account, and the last active owner cannot be demoted.
 - **Conditional surfaces:** Business type, feature settings (such as KDS or WhatsApp), and account state can hide or disable a surface without changing the fixed role boundary.
 

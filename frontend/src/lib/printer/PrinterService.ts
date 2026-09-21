@@ -368,9 +368,47 @@ class PrinterService {
     printWindow.document.body.replaceChildren(
       ...Array.from(parsed.body.childNodes).map((node) => printWindow.document.importNode(node, true)),
     );
-    printWindow.document.close();
-    printWindow.print();
-    printWindow.close();
+
+    // Do not document.close() here: this window was not opened with
+    // document.open()/write(), and close() wipes the ticket in Chromium
+    // before the print dialog snapshots it (blank kitchen HTML tickets).
+    // Keep the popup alive until afterprint — print() then window.close()
+    // on the same tick also captures an empty page.
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const settle = (err?: Error) => {
+        if (settled) return;
+        settled = true;
+        printWindow.removeEventListener('afterprint', onAfterPrint);
+        if (err) reject(err);
+        else resolve();
+      };
+      const onAfterPrint = () => {
+        try { printWindow.close(); } catch { /* already closed */ }
+        settle();
+      };
+      printWindow.addEventListener('afterprint', onAfterPrint);
+      const triggerPrint = () => {
+        try {
+          if (printWindow.closed) {
+            settle(new Error('Print window was closed before the ticket could be printed'));
+            return;
+          }
+          printWindow.print();
+          window.setTimeout(() => {
+            try { printWindow.close(); } catch { /* already closed */ }
+            settle();
+          }, 1500);
+        } catch (err) {
+          settle(err instanceof Error ? err : new Error(String(err)));
+        }
+      };
+      if (printWindow.document.readyState === 'complete') {
+        printWindow.requestAnimationFrame(() => triggerPrint());
+      } else {
+        printWindow.onload = () => triggerPrint();
+      }
+    });
   }
 
   private setStatus(status: PrinterStatus, info?: PrinterInfo): void {

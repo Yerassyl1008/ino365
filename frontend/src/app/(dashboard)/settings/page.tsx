@@ -32,6 +32,7 @@ import { TaxConfigurationPanel } from '@/components/settings/TaxConfigurationPan
 import { PaymentMethodsSettings } from '@/components/settings/PaymentMethodsSettings';
 import { LocalePreferencesPanel } from '@/components/settings/LocalePreferencesPanel';
 import { ServerAppWaiterAccess } from '@/components/settings/ServerAppWaiterAccess';
+import { RemoteOwnerAccess } from '@/components/settings/RemoteOwnerAccess';
 import { TimeZoneSelect } from '@/components/TimeZoneSelect';
 import type { HealthCheckReport } from '@/types/electron';
 import { useLocale, useTranslations, type AppConfig } from 'use-intl';
@@ -441,8 +442,13 @@ export default function SettingsPage() {
       router.replace('/settings');
       return;
     }
+    if (requestedTab === 'remote-access' && !isOwner) {
+      setActiveTab('store');
+      router.replace('/settings');
+      return;
+    }
     setActiveTab(requestedTab);
-  }, [requestedTab, isRestaurant, router]);
+  }, [requestedTab, isRestaurant, isOwner, router]);
 
   const handleSettingsTabChange = (value: string) => {
     setActiveTab(value);
@@ -832,6 +838,9 @@ export default function SettingsPage() {
     qr_url: string;
     qr_data_url: string | null;
     ips_data?: { ip: string; url: string; qr_data: string | null }[];
+    public_pos_url?: string | null;
+    waiter_public_url?: string | null;
+    waiter_qr_data_url?: string | null;
   } | null>(null);
   const [serverAppInfoLoading, setServerAppInfoLoading] = useState(true);
 
@@ -1054,7 +1063,11 @@ export default function SettingsPage() {
       toast.success(t('printerDeleted'));
       fetchPrinters();
       refreshHardwarePrinter();
-    } catch { toast.error(t('printerDeleteFailed')); }
+    } catch (err) {
+      const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+      if (status === 403) toast.error(t('printerDeleteForbidden'));
+      else toast.error(printerErrorMessage(err, t('printerDeleteFailed')));
+    }
   };
 
   const setDefaultPrinter = async (id: string) => {
@@ -2557,6 +2570,9 @@ export default function SettingsPage() {
               <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupData')}</p>
             </div>
             <SettingsNavItem label={t('tabMobileAccess')} value="mobile-access" active={activeTab} onClick={handleSettingsTabChange} />
+            {isOwner && (
+              <SettingsNavItem label={t('tabRemoteAccess')} value="remote-access" active={activeTab} onClick={handleSettingsTabChange} />
+            )}
             <SettingsNavItem label={t('tabBackupData')} value="data" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('tabOrderflow')} value="orderflow" active={activeTab} onClick={handleSettingsTabChange} />
 
@@ -3544,6 +3560,24 @@ export default function SettingsPage() {
 
                 {serverAppInfo && !serverAppInfoLoading && (
                   <div className="flex flex-col gap-6 w-full">
+                    {serverAppInfo.waiter_public_url && (
+                      <div className="flex flex-col items-center p-4 rounded-lg border border-emerald-200 bg-emerald-50">
+                        <p className="text-xs font-semibold text-emerald-800 uppercase tracking-wide mb-3">
+                          {t('serverAppPublicUrl')}
+                        </p>
+                        {serverAppInfo.waiter_qr_data_url ? (
+                          <img src={serverAppInfo.waiter_qr_data_url} alt={t('serverAppQrAlt')} className="w-40 h-40 rounded-lg mb-3 bg-card p-2 border border-border" />
+                        ) : (
+                          <div className="w-40 h-40 bg-muted rounded-lg flex items-center justify-center mb-3">
+                            <QrCode size={40} className="text-gray-400" />
+                          </div>
+                        )}
+                        <Ltr as="a" href={serverAppInfo.waiter_public_url} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-brand hover:underline break-all text-center">
+                          {serverAppInfo.waiter_public_url}
+                        </Ltr>
+                        <p className="mt-2 text-xs text-emerald-900 text-center">{t('serverAppPublicUrlHint')}</p>
+                      </div>
+                    )}
                     {serverAppInfo.ips_data && serverAppInfo.ips_data.length > 0 ? (
                       <>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
@@ -3994,6 +4028,11 @@ export default function SettingsPage() {
                 )}
               </div>
 
+              <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-600" />
+                <p className="text-xs text-amber-900">{t('printerCyrillicHint')}</p>
+              </div>
+
               {/* Detected (OS-installed) printers — one-click add */}
               {!showPrinterForm && (
                 <div className="mb-5">
@@ -4256,6 +4295,9 @@ export default function SettingsPage() {
                       ? t('printMethodEscposHint')
                       : t('printMethodBrowserHint')}
                   </p>
+                  {printingForm.printMethod === 'escpos' && (
+                    <p className="mt-2 text-xs text-amber-800">{t('printerCyrillicHint')}</p>
+                  )}
                 </div>
                 {isRestaurant && (
                 <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
@@ -5126,6 +5168,13 @@ export default function SettingsPage() {
               )}
             </div>
           </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="remote-access">
+          <div className="pb-6 max-w-3xl space-y-6">
+            <h2 className="text-lg font-semibold text-foreground">{t('tabRemoteAccess')}</h2>
+            <RemoteOwnerAccess />
           </div>
         </TabsContent>
 

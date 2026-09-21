@@ -32,12 +32,14 @@ export type WorkspaceLabelKey =
   | 'productAnalytics'
   | 'products'
   | 'recipes'
+  | 'remoteAccess'
   | 'salesAnalytics'
   | 'serviceChargeReport'
   | 'staff'
   | 'staffAnalytics'
   | 'stock'
   | 'stockBalances'
+  | 'stockCount'
   | 'stockMovements'
   | 'support'
   | 'tables'
@@ -68,6 +70,7 @@ const HREF_LABELS: Array<{ href: string; labelKey: WorkspaceLabelKey }> = [
   { href: '/warehouse?tab=recipes', labelKey: 'recipes' },
   { href: '/warehouse?tab=movements', labelKey: 'stockMovements' },
   { href: '/warehouse?tab=ingredients', labelKey: 'stockBalances' },
+  { href: '/warehouse?tab=count', labelKey: 'stockCount' },
   { href: '/tables', labelKey: 'tables' },
   { href: '/kds', labelKey: 'kds' },
   { href: '/print-test', labelKey: 'printTest' },
@@ -81,6 +84,7 @@ const HREF_LABELS: Array<{ href: string; labelKey: WorkspaceLabelKey }> = [
   { href: '/settings?tab=appearance', labelKey: 'appearance' },
   { href: '/settings?tab=whatsapp', labelKey: 'whatsappSettings' },
   { href: '/settings?tab=mobile-access', labelKey: 'mobileAccess' },
+  { href: '/settings?tab=remote-access', labelKey: 'remoteAccess' },
   { href: '/settings?tab=data', labelKey: 'backupData' },
   { href: '/settings?tab=orderflow', labelKey: 'orderflow' },
   { href: '/settings?tab=server-app', labelKey: 'tablesideOrdering' },
@@ -107,7 +111,7 @@ export function normalizeWorkspaceHref(href: string): string {
   }
   if (cleanPath === '/warehouse') {
     const tab = params.get('tab');
-    if (tab === 'recipes' || tab === 'movements' || tab === 'ingredients') {
+    if (tab === 'recipes' || tab === 'movements' || tab === 'ingredients' || tab === 'count') {
       return `/warehouse?tab=${tab}`;
     }
     return '/warehouse?tab=ingredients';

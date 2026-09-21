@@ -25,8 +25,9 @@ import {
   decodeCp866,
   encodeCp866,
   escPosSelectCp866,
-  foldUnsupportedCyrillic,
+  foldForCp866Printer,
   isCp866Encodable,
+  needsCp866Fold,
 } from '../../shared/print/cp866';
 
 export type PrintResult = {
@@ -1503,7 +1504,7 @@ const CURRENCY_ASCII_MAP: Record<string, string> = {
   '₹': 'Rs', '₨': 'Rs', '€': 'EUR', '£': 'GBP', '¥': 'Yen',
   '₩': 'KRW', '₺': 'TRY', '₫': 'VND', '₪': 'ILS', '₽': 'RUB',
   '฿': 'THB', '₱': 'PHP', '₴': 'UAH', '₦': 'NGN', '₵': 'GHS',
-  '₡': 'CRC', '₲': 'PYG', 'د.إ': 'AED', '﷼': 'SAR', 'ریال': 'IRR', '৳': 'BDT',
+  '₡': 'CRC', '₲': 'PYG', '₸': 'KZT', 'د.إ': 'AED', '﷼': 'SAR', 'ریال': 'IRR', '৳': 'BDT',
   'E£': 'EGP',
 };
 
@@ -1514,16 +1515,16 @@ const CURRENCY_ASCII_MAP: Record<string, string> = {
  * receipts unreadable and pushed merchants onto the blurry HTML print path.
  */
 export function normalizeCyrillicThermalText(text: string): string {
-  return foldUnsupportedCyrillic(text);
+  return foldForCp866Printer(text);
 }
 
 /**
  * Folds a receipt line to characters a generic thermal printer can render.
- * Russian/Kazakh keep PC866 Cyrillic; other languages pass through unless
- * the line itself contains leftover non-PC866 Cyrillic (mixed catalogs).
+ * Russian/Kazakh keep PC866 Cyrillic; leftover letters and typographic
+ * punctuation (`№`, em dashes) become PC866-safe so the line is not skipped.
  */
 export function foldThermalText(language: string | undefined, text: string): string {
-  return language === 'ru' || language === 'kk' || /[\u0400-\u04FF]/.test(text)
+  return language === 'ru' || language === 'kk' || needsCp866Fold(text)
     ? normalizeCyrillicThermalText(text)
     : text;
 }
@@ -1578,7 +1579,14 @@ function printableEscPosText(line: string): string {
 }
 
 function encodeEscPosText(line: string): number[] {
-  return isCp866Encodable(line) ? encodeCp866(line) : [...Buffer.from(line, 'utf8')];
+  // Never emit UTF-8 for a Cyrillic line. Cheap Chinese-firmware clones
+  // interpret UTF-8 (and leftover GBK/Kanji mode) as hanzi — «Шашлык»
+  // becomes two-byte Chinese glyphs. PC866 single bytes are the native
+  // CIS code page; unmapped leftovers become '?'.
+  if (isCp866Encodable(line) || containsCp866Cyrillic(line)) {
+    return encodeCp866(line);
+  }
+  return [...Buffer.from(line, 'utf8')];
 }
 
 export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number; language?: string } = {}, warnings?: PrintWarning[]): Buffer {
@@ -1633,7 +1641,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     const lineDW = line.includes('{DOUBLE_WIDTH}');
     const lineFontB = line.includes('{FONT_B}');
     const center = line.startsWith('{CENTER}') && line.includes('{/CENTER}');
-    const textWithoutSupportedCurrency = printableLine.replace(/[₹₨€£¥₩₺₫₪₽฿₱₴₦₵₡₲]/g, '');
+    const textWithoutSupportedCurrency = printableLine.replace(/[₹₨€£¥₩₺₫₪₽฿₱₴₦₵₡₲₸]/g, '');
     const textWithoutNativeScripts = textWithoutSupportedCurrency.replace(/[А-яЁё]/g, '');
     if (/[^\x00-\x7F]/.test(textWithoutNativeScripts)) {
       // Allow Arabic/Persian script through only when the printer profile
@@ -1689,6 +1697,11 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       buf.push(0x1B, 0x45, 0x01);
     }
 
+    // Re-select after ESC ! / ESC E: clone firmware often resets the code
+    // page on style changes, which turns CP866 uppercase into C1 controls
+    // (visibly blank Russian names like «Шашлык»).
+    if (needsCp866) selectCp866();
+
     buf.push(...encodeEscPosText(line));
     buf.push(0x0A);
   }
@@ -1721,6 +1734,11 @@ export function escPosToText(data: Buffer | Uint8Array): string {
     if (byte === 0x1D && bytes[i + 1] === 0x56) {
       const mode = bytes[i + 2];
       i += mode === 0x41 || mode === 0x42 ? 4 : 3;
+      continue;
+    }
+    if (byte === 0x1C) {
+      // FS . (cancel Kanji/GB2312) and other 2-byte FS commands.
+      i += 2;
       continue;
     }
     if (byte === 0x0D) {

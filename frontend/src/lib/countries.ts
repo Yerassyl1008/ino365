@@ -7,6 +7,7 @@ export {
   listTimeZones,
   isValidTimeZone,
   getCurrencySymbol,
+  resolveDisplayCurrency,
   formatCurrency,
   formatCurrencyForTenant,
   formatMoney,

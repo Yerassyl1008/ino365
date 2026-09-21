@@ -43,6 +43,9 @@ import {
 } from '@/lib/append-attempt';
 import { preferChildScopedBill } from '@/lib/printer/tax-components';
 import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
+import { tableDisplayName, tableNeedsHallPrefix } from '@shared/table-label';
+import DishPrice from '@/components/pos/DishPrice';
+import { visibleDishPrices } from '@shared/dish-discount';
 
 type OrdersKey = keyof AppConfig['Messages']['orders'];
 
@@ -154,6 +157,9 @@ export default function OrdersPage() {
   const [tabFilter, setTabFilter] = useState<FilterType>('active');
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
   const [tables, setTables] = useState<Table[]>([]);
+  const qualifyTableHall = tableNeedsHallPrefix(tables);
+  const formatOrderTable = (table?: Table | null) =>
+    table ? tableDisplayName(table.name, table.hall_name, qualifyTableHall) : '';
   const [kdsEnabled, setKdsEnabled] = useState(true);
   const { confirm, ConfirmDialog } = useConfirm();
   const isWhatsAppReady = useWhatsAppReady();
@@ -774,7 +780,7 @@ export default function OrdersPage() {
   };
 
   const handleConvertToTakeaway = async (order: Order) => {
-    const tableNote = order.table ? tOrders('freeTableSuffix', { name: order.table.name }) : '';
+    const tableNote = order.table ? tOrders('freeTableSuffix', { name: formatOrderTable(order.table) }) : '';
     if (!await confirm(tOrders('convertToTakeawayConfirm', { number: order.order_number, tableNote }))) return;
     setConvertingOrderId(order.id);
     try {
@@ -897,16 +903,16 @@ export default function OrdersPage() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]">
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="mb-3 flex shrink-0 flex-col gap-3 sm:mb-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-foreground">{tNav('orders')}</h1>
-        <div className="flex gap-2">
+        <div className="-mx-1 flex gap-2 overflow-x-auto px-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
           {(['all', 'active', 'unpaid', 'held'] as FilterType[]).map((f) => (
             <button
               key={f}
               onClick={() => setTabFilter(f)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium ${
+              className={`shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium sm:px-4 ${
                 tabFilter === f
                   ? 'bg-brand text-white'
                   : 'bg-card text-muted-foreground border border-border hover:border-gray-400'
@@ -919,9 +925,9 @@ export default function OrdersPage() {
       </div>
 
       {/* Filter Bar */}
-      <div className="flex flex-wrap items-center gap-3 mb-4">
+      <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2 sm:mb-4 sm:gap-3">
         {/* Search by order number */}
-        <div className="relative flex-1 min-w-[200px]">
+        <div className="relative min-w-0 w-full sm:flex-1 sm:min-w-[200px]">
           <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
@@ -936,12 +942,12 @@ export default function OrdersPage() {
         <select
           value={filters.table}
           onChange={(e) => setFilters(prev => ({ ...prev, table: e.target.value }))}
-          className="px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
+          className="min-w-0 max-w-full px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
         >
           <option value="">{tOrders('allTables')}</option>
           {tables.map((table: Table) => (
             <option key={table.id} value={String(table.id)}>
-              {table.name}
+              {tableDisplayName(table.name, table.hall_name, qualifyTableHall)}
             </option>
           ))}
         </select>
@@ -950,7 +956,7 @@ export default function OrdersPage() {
         <select
           value={filters.type}
           onChange={(e) => setFilters(prev => ({ ...prev, type: e.target.value }))}
-          className="px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
+          className="min-w-0 max-w-full px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
         >
           <option value="">{tOrders('allTypes')}</option>
           <option value="dine_in">{tOrders('dineIn')}</option>
@@ -963,7 +969,7 @@ export default function OrdersPage() {
         <select
           value={filters.status}
           onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
-          className="px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
+          className="min-w-0 max-w-full px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
         >
           <option value="">{tOrders('allStatuses')}</option>
           <option value="active">{tOrders('active')}</option>
@@ -975,15 +981,15 @@ export default function OrdersPage() {
       {/* Orders List */}
       {tabFilter === 'held' ? (
         loading ? (
-          <div className="flex items-center justify-center flex-1">
+          <div className="flex items-center justify-center flex-1 min-h-0">
             <div className="w-8 h-8 border-4 border-brand border-t-transparent rounded-full animate-spin" />
           </div>
         ) : Object.keys(heldOrdersStore.orders).length === 0 ? (
-          <div className="flex items-center justify-center flex-1 text-gray-400">
+          <div className="flex items-center justify-center flex-1 min-h-0 text-gray-400">
             <p>{tOrders('heldEmpty')}</p>
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 content-start items-start auto-rows-max">
+          <div className="flex-1 min-h-0 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 content-start items-start auto-rows-max">
             {Object.values(heldOrdersStore.orders).map((heldOrder) => (
               <div key={heldOrder.tableId} className="bg-card rounded-xl border border-blue-200 overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow">
                  <div className="p-4 border-b border-border bg-blue-50/50 flex justify-between items-center">
@@ -1042,15 +1048,15 @@ export default function OrdersPage() {
           </div>
         )
       ) : loading ? (
-        <div className="flex items-center justify-center flex-1">
+        <div className="flex items-center justify-center flex-1 min-h-0">
           <div className="w-8 h-8 border-4 border-brand border-t-transparent rounded-full animate-spin" />
         </div>
       ) : filteredOrders.length === 0 ? (
-        <div className="flex items-center justify-center flex-1 text-gray-400">
+        <div className="flex items-center justify-center flex-1 min-h-0 text-gray-400">
           <p>{tOrders('empty')}</p>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 content-start items-start auto-rows-max">
+        <div className="flex-1 min-h-0 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 content-start items-start auto-rows-max">
           {filteredOrders.map((order) => {
             const activeItems = (order.items || []).filter((i: OrderItem) => i.status !== 'cancelled');
             const cancelledItems = (order.items || []).filter((i: OrderItem) => i.status === 'cancelled');
@@ -1079,7 +1085,7 @@ export default function OrdersPage() {
                     ) : null; })()}
                     <span className="text-sm text-muted-foreground capitalize">{tOrders(ORDER_TYPE_KEYS[order.type])}</span>
                     {order.table && (
-                      <span className="text-sm text-orange-600 font-medium">{order.table.name}</span>
+                      <span className="text-sm text-orange-600 font-medium">{formatOrderTable(order.table)}</span>
                     )}
                     <span className="flex items-center gap-1 text-xs text-gray-400">
                       <Clock size={12} />
@@ -1233,7 +1239,14 @@ export default function OrdersPage() {
                               )}
                             </div>
                             <div className="flex items-center gap-2">
-                              <span className="text-sm text-muted-foreground">{fmt(Number(item.total))}</span>
+                              {Number(item.discount_amount) > 0 ? (
+                                <span className="inline-flex items-baseline gap-1.5 text-sm text-muted-foreground">
+                                  <span className="text-xs text-gray-400 line-through">{fmt(Number(item.subtotal) + Number(item.discount_amount))}</span>
+                                  <span>{fmt(Number(item.total))}</span>
+                                </span>
+                              ) : (
+                                <span className="text-sm text-muted-foreground">{fmt(Number(item.total))}</span>
+                              )}
                               {item.status === 'pending' && isOwnerOrManager && !paid && (
                                 <button
                                   onClick={() => deleteItem(order.id, item.id)}
@@ -1425,7 +1438,7 @@ export default function OrdersPage() {
       {/* Print Confirmation Modal */}
       {confirmPrintBillId !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-card rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
+          <div className="bg-card rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
             <h2 className="text-lg font-bold text-foreground mb-2">
               {(printHistory[confirmPrintBillId]?.length ?? 0) > 0 ? tOrders('reprintReceiptTitle') : tOrders('printReceiptTitle')}
             </h2>
@@ -1434,7 +1447,7 @@ export default function OrdersPage() {
                 ? tOrders('reprintReceiptWarning')
                 : tOrders('printReceiptConfirm')}
             </p>
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -1442,31 +1455,34 @@ export default function OrdersPage() {
               >
                 {tCommon('cancel')}
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleDownloadPrintPreview(confirmPrintBillId)}
-                disabled={previewingBillId === confirmPrintBillId}
-                title={tOrders('downloadPrintPreview')}
-                aria-label={tOrders('downloadPrintPreview')}
-                className="w-9 px-0"
-              >
-                {previewingBillId === confirmPrintBillId
-                  ? <Loader2 size={14} className="animate-spin" />
-                  : <Download size={14} />}
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => handlePrint(confirmPrintBillId)}
-                disabled={printingBillId === confirmPrintBillId}
-              >
-                <Printer size={14} className="me-1.5" />
-                {printingBillId === confirmPrintBillId
-                  ? tOrders('printing')
-                  : (printHistory[confirmPrintBillId]?.length ?? 0) > 0
-                    ? tOrders('confirmReprint')
-                    : tOrders('confirmPrint')}
-              </Button>
+              <div className="ms-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleDownloadPrintPreview(confirmPrintBillId)}
+                  disabled={previewingBillId === confirmPrintBillId}
+                  title={tOrders('downloadPrintPreview')}
+                  aria-label={tOrders('downloadPrintPreview')}
+                  className="w-9 px-0"
+                >
+                  {previewingBillId === confirmPrintBillId
+                    ? <Loader2 size={14} className="animate-spin" />
+                    : <Download size={14} />}
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => handlePrint(confirmPrintBillId)}
+                  disabled={printingBillId === confirmPrintBillId}
+                  className="h-auto min-h-8 max-w-full min-w-0 shrink whitespace-normal"
+                >
+                  <Printer size={14} className="me-1.5" />
+                  {printingBillId === confirmPrintBillId
+                    ? tOrders('printing')
+                    : (printHistory[confirmPrintBillId]?.length ?? 0) > 0
+                      ? tOrders('confirmReprint')
+                      : tOrders('confirmPrint')}
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -1503,7 +1519,7 @@ export default function OrdersPage() {
                     className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
                   />
                   <label htmlFor="freeTable" className="text-sm text-foreground">
-                    {tOrders('freeTable', { name: cancelModal.order.table.name })}
+                    {tOrders('freeTable', { name: formatOrderTable(cancelModal.order.table) })}
                   </label>
                 </div>
               )}
@@ -1766,9 +1782,14 @@ placeholder={tOrders('managerPin')}
                   >
                     <div>
                       <span className="text-sm font-medium text-foreground">{product.name}</span>
-                      {product.price && (
-                        <span className="text-xs text-muted-foreground ms-2">{fmt(Number(product.price))}</span>
-                      )}
+                      <span className="text-xs text-muted-foreground ms-2">
+                        <DishPrice
+                          original={visibleDishPrices(product, addItemsOrder.type).original}
+                          discounted={visibleDishPrices(product, addItemsOrder.type).discounted}
+                          className="text-xs font-medium text-muted-foreground"
+                          originalClassName="text-[11px] text-gray-400 line-through"
+                        />
+                      </span>
                     </div>
                     <Plus size={14} className="text-green-500" />
                   </button>

@@ -38,7 +38,7 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     fontBColumns: 64,
     printWidthMm: 72,
     cutMode: 'partial',
-    notes: '80mm ESC/POS receipt printer. Vendor specs list 72mm print width, 576 dots/line, Font A 42/48 columns, Font B 56/64 columns.',
+    notes: '80mm ESC/POS. Russian/Kazakh print as PC866 (ESC t 17) after cancelling Chinese/GBK mode (FS .). On Windows use Generic/Text Only + winprint RAW — a manufacturer GDI driver leaves the printer in GBK and tickets look Chinese.',
   },
   {
     id: 'epson-tm-series',
@@ -63,6 +63,7 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     fontAColumns: 42,
     fontBColumns: 64,
     cutMode: 'full',
+    notes: '80mm generic ESC/POS (CIS thermal clones). Cyrillic uses PC866; Chinese/GBK mode is cancelled so names like Шашлык do not print as hanzi. Windows: Generic/Text Only, winprint, RAW.',
   },
   {
     id: 'generic-escpos-58',
@@ -75,6 +76,7 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     fontAColumns: 32,
     fontBColumns: 56,
     cutMode: 'full',
+    notes: '58mm generic ESC/POS. Same PC866 Cyrillic path as 80mm — not a Chinese GBK profile.',
   },
 ];
 

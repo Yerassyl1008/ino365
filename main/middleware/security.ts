@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import cors from 'cors';
 import expressRateLimit from 'express-rate-limit';
 import { createHash } from 'node:crypto';
 import { getDatabase, isKdsEnabled, now, parseDbTimestamp } from '../db';
@@ -438,23 +439,86 @@ export function isBlockedSsrfTarget(ip: string): boolean {
   return true; // unparseable — fail closed
 }
 
+const SAFE_REQUEST_HOST = /^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(?::\d{1,5})?$/;
+
+/** Hostname from a Host header, or null if the header is missing/unsafe. */
+export function hostnameFromHostHeader(host: string | null | undefined): string | null {
+  if (!host || !SAFE_REQUEST_HOST.test(host)) return null;
+  if (host.startsWith('[')) {
+    const end = host.indexOf(']');
+    return end > 1 ? host.slice(1, end).toLowerCase() : null;
+  }
+  return host.split(':')[0].toLowerCase();
+}
+
+export function isTryCloudflareHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === 'trycloudflare.com' || host.endsWith('.trycloudflare.com');
+}
+
+function normalizeOrigin(value: string): string {
+  return value.trim().toLowerCase().replace(/\/$/, '');
+}
+
+/** Extra HTTPS origins allowed from `FLO_PUBLIC_ORIGINS` (comma-separated). */
+export function publicCorsOriginsFromEnv(env = process.env.FLO_PUBLIC_ORIGINS): string[] {
+  if (!env) return [];
+  return env.split(',').map(normalizeOrigin).filter(Boolean);
+}
+
+/**
+ * Same-origin browser clients (LAN, Cloudflare Tunnel, VPS HTTPS domain) plus
+ * the historical localhost / .local / private-IP allowlist.
+ */
+export function isAllowedCorsOrigin(origin: string | undefined, requestHost?: string | null): boolean {
+  if (!origin) return true;
+  try {
+    const hostname = new URL(origin).hostname.toLowerCase();
+    if (hostname === 'localhost' || hostname.endsWith('.local') || isAllowedPrivateIp(hostname)) {
+      return true;
+    }
+    if (isTryCloudflareHostname(hostname)) return true;
+    const extra = publicCorsOriginsFromEnv();
+    if (extra.includes(normalizeOrigin(origin))) return true;
+    if (extra.some((item) => {
+      try { return new URL(item).hostname.toLowerCase() === hostname; } catch { return item === hostname; }
+    })) return true;
+    const requestHostname = hostnameFromHostHeader(requestHost);
+    return Boolean(requestHostname && hostname === requestHostname);
+  } catch {
+    return false;
+  }
+}
+
+/** Behind Nginx/Caddy, trust one proxy hop so rate-limits see the client IP. */
+export function configureExpressForPublicHttp(app: { set: (key: string, value: unknown) => unknown }): void {
+  const raw = String(process.env.FLO_TRUST_PROXY || '').trim().toLowerCase();
+  if (raw === '1' || raw === 'true' || raw === 'yes') {
+    app.set('trust proxy', 1);
+  }
+}
+
+export function corsMiddleware(req: Request, res: Response, next: NextFunction): void {
+  cors({
+    origin: (origin, callback) => {
+      if (isAllowedCorsOrigin(origin, req.get('Host'))) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error('Not allowed by CORS'));
+    },
+  })(req, res, next);
+}
+
+/** @deprecated Use corsMiddleware so same-origin tunnel hosts are allowed. */
 export const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    if (!origin) return callback(null, true);
-
-    try {
-      const parsedOrigin = new URL(origin);
-      const hostname = parsedOrigin.hostname;
-
-      if (hostname === 'localhost' || hostname.endsWith('.local') || isAllowedPrivateIp(hostname)) {
-        return callback(null, true);
-      }
-      
-      callback(new Error('Not allowed by CORS'));
-    } catch (err) {
-      callback(new Error('Invalid origin format'));
+    if (isAllowedCorsOrigin(origin)) {
+      callback(null, true);
+      return;
     }
-  }
+    callback(new Error(origin ? 'Not allowed by CORS' : 'Invalid origin format'));
+  },
 };
 
 /**

@@ -4,7 +4,7 @@ import jwt, { SignOptions } from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { randomBytes } from 'crypto';
 import { getCountryCallingCode, type CountryCode } from 'libphonenumber-js';
-import { getCurrentSchemaVersion, getDatabase, getSettingValue, now, verifyPin } from '../db';
+import { getCurrentSchemaVersion, getDatabase, getSettingValue, now, verifyPin, ensureDefaultHall } from '../db';
 import { authorizeMasterPin, isMasterPinAvailable, setMasterPin } from '../services/master-pin';
 import { authRateLimit, validatePassword, revokeToken, isTokenRevoked, isTokenStale, invalidateUserAuthCache } from '../middleware/security';
 import { getCurrencySymbol, getCountryByCode, isValidTimeZone } from '../countries';
@@ -179,10 +179,11 @@ function upsertSettings(db: ReturnType<typeof getDatabase>, entries: Record<stri
 
 
 function insertTable(db: ReturnType<typeof getDatabase>, id: string, number: string, capacity: number): void {
+  const hallId = ensureDefaultHall(db).id;
   db.prepare(`
-    INSERT OR IGNORE INTO tables (id, number, capacity, status, created_at, updated_at)
-    VALUES (?, ?, ?, 'available', ?, ?)
-  `).run(id, number, capacity, now(), now());
+    INSERT OR IGNORE INTO tables (id, number, capacity, status, hall_id, created_at, updated_at)
+    VALUES (?, ?, ?, 'available', ?, ?, ?)
+  `).run(id, number, capacity, hallId, now(), now());
 }
 
 function insertCustomer(db: ReturnType<typeof getDatabase>, id: string, name: string, rawPhone: string, fallbackDialCode: string, country = 'IN'): void {

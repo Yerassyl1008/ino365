@@ -1,18 +1,22 @@
 /**
  * GET /api/server-app-info
- * Returns Server App access URLs so Settings can render QR codes for tablets
- * and phones on the same local network.
+ * Returns Server App access URLs so POS (cashier) and Settings can render QR
+ * codes for tablets and phones — LAN, and a public HTTPS waiter URL when
+ * the owner saved a VPS domain (or set FLO_WAITER_PUBLIC_URL).
  */
 import { Router, Request, Response } from 'express';
 import QRCode from 'qrcode';
 import { getLocalIP, getAllLocalIPs } from '../server';
 import { getServerAppPort } from '../server-app-state';
-import { isServerAppEnabled } from '../db';
+import { getSettingValue, isServerAppEnabled } from '../db';
+import { REMEMBERED_URL_KEY } from './remote-access';
 import { asyncHandler } from '../middleware/async-handler';
+import { requireRole } from '../middleware/security';
+import { ROLE_ACCESS } from '../../shared/role-permissions';
 
 const router = Router();
 
-router.get('/', asyncHandler(async (_req: Request, res: Response) => {
+router.get('/', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyncHandler(async (_req: Request, res: Response) => {
   if (!isServerAppEnabled()) {
     return res.status(404).json({ error: 'Not found' });
   }
@@ -35,13 +39,29 @@ router.get('/', asyncHandler(async (_req: Request, res: Response) => {
     }));
 
     const primaryIpData = ipsData.find((entry) => entry.ip === ip);
+    const remembered = (getSettingValue(REMEMBERED_URL_KEY) || '').trim();
+    const publicPosUrl = remembered ? remembered.replace(/\/$/, '') : null;
+    const waiterFromEnv = (process.env.FLO_WAITER_PUBLIC_URL || '').trim().replace(/\/$/, '');
+    const waiterPublicUrl = waiterFromEnv
+      || (publicPosUrl ? `${publicPosUrl}/server-standalone` : null);
+    let waiter_qr_data_url: string | null = null;
+    if (waiterPublicUrl) {
+      try {
+        waiter_qr_data_url = await QRCode.toDataURL(waiterPublicUrl, { errorCorrectionLevel: 'M', width: 256 });
+      } catch {
+        waiter_qr_data_url = null;
+      }
+    }
 
     res.json({
       mdns_url: mdnsUrl,
       ip_url: ipUrl,
-      qr_url: ipUrl,
-      qr_data_url: primaryIpData?.qr_data ?? null,
+      qr_url: waiterPublicUrl || ipUrl,
+      qr_data_url: waiter_qr_data_url ?? primaryIpData?.qr_data ?? null,
       ips_data: ipsData,
+      public_pos_url: publicPosUrl,
+      waiter_public_url: waiterPublicUrl,
+      waiter_qr_data_url,
     });
   } catch (error: any) {
     console.error('[API] Internal error:', error);

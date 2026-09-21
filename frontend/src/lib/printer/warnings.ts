@@ -10,6 +10,7 @@
  * why.
  */
 
+import { containsCp866Cyrillic, encodeCp866, escPosSelectCp866, isCp866Encodable } from '@print/cp866';
 import { CURRENCY_ASCII_MAP, foldThermalText, selectCyrillicCodepage } from './unicode';
 
 export interface PrintWarning {
@@ -164,5 +165,19 @@ export function safePrinterText<T extends { text(value: string): T }>(
     return enc;
   }
   selectCyrillicCodepage(enc as T & { codepage?(name: string): T }, language, printableValue);
+  // Raw PC866 + FS . / ESC t 17 immediately before the payload, matching
+  // the desktop encoder. ReceiptPrinterEncoder only emits ESC t when its
+  // software state changes, so style commands that reset clone firmware
+  // would otherwise print uppercase Cyrillic as blank C1 controls.
+  if (
+    containsCp866Cyrillic(printableValue) &&
+    isCp866Encodable(printableValue) &&
+    'raw' in enc &&
+    typeof (enc as { raw?: (data: Uint8Array) => T }).raw === 'function'
+  ) {
+    return (enc as { raw: (data: Uint8Array) => T }).raw(
+      new Uint8Array([...escPosSelectCp866(), ...encodeCp866(printableValue)]),
+    );
+  }
   return enc.text(printableValue);
 }

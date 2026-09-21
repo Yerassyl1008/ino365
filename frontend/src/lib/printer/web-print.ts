@@ -26,6 +26,7 @@ import {
   formatCurrencyForTenant,
   formatNumberForTenant,
   formatDateForTenant,
+  resolveDisplayCurrency,
 } from '@/lib/countries';
 import { parseDbTimestamp } from '@/lib/utils';
 import { loadLocaleMessages } from '@/lib/i18n/loader';
@@ -70,14 +71,13 @@ export function escapeHtml(value: unknown): string {
 }
 
 /**
- * Render one kernel-annotated value. Confident LTR islands (phones, invoice
- * numbers, tax IDs — per the direction kernel) are wrapped in a bidi-isolated
- * LTR span when the document base direction is RTL; everything else renders
- * inline in the base direction.
+ * Render one kernel-annotated value. Confident LTR tokens (phones, invoice
+ * numbers, tax IDs) are wrapped in a bidi-isolated nowrap span so they never
+ * wrap mid-token on a 58mm ticket — including LTR receipts such as Russian.
  */
-function directionalValue(value: DirectionalText | null, base: TextDirection): string {
+function directionalValue(value: DirectionalText | null, _base: TextDirection): string {
   if (!value) return '';
-  if (value.direction === 'ltr' && base === 'rtl') {
+  if (value.direction === 'ltr') {
     return `<span class="ltr" dir="ltr">${escapeHtml(value.text)}</span>`;
   }
   return escapeHtml(value.text);
@@ -139,8 +139,13 @@ export async function printWebBill(
 ): Promise<void> {
   const languages = resolvePrintLanguages(opts);
 
-  // 1. Open popup window synchronously to maintain transient user activation
-  const printWindow = typeof window !== 'undefined' ? window.open('', '_blank', 'width=800,height=600') : null;
+  // 1. Open popup window synchronously to maintain transient user activation.
+  // Size it like a 58/80mm ticket so the on-screen preview is not an A4 sheet
+  // with a four-column table stretched across 800px.
+  const previewWidth = (opts.paperSize ?? 'thermal58') === 'thermal80' ? 360 : 280;
+  const printWindow = typeof window !== 'undefined'
+    ? window.open('', '_blank', `width=${previewWidth},height=740`)
+    : null;
   if (!printWindow) {
     toast.error('Please allow popups to print bills');
     throw new Error('Popup window was blocked by browser');
@@ -353,33 +358,41 @@ export function generateBillHtml(
       ${header?.taxId ? `<p>${escapeHtml(header.taxId.label.primary)}: ${directionalValue(header.taxId.value, base)}</p>` : ''}
     </div>
 
-    <!-- Bill Details -->
+    <!-- Bill Details: stacked full-width rows so invoice/date never wrap mid-token -->
     <div class="bill-details">
-      <table>
-        <tr>
-          <td><strong>${escapeHtml(invoiceNumberLabel)}</strong> ${meta ? directionalValue(meta.invoiceNumber, base) : ''}</td>
-          <td class="text-end"><strong>${escapeHtml(L.date)}</strong> ${meta ? escapeHtml(formatReceiptDate(meta.timestamp.text, tenant, LANGUAGES[lang]?.locale ?? lang)) : ''}</td>
-        </tr>
-        ${meta?.table ? `<tr><td><strong>${escapeHtml(L.table)}</strong> ${escapeHtml(meta.table.name.text)}</td><td></td></tr>` : ''}
-        ${customer?.name ? `<tr><td><strong>${escapeHtml(L.customer)}</strong> ${escapeHtml(customer.name.text)}</td><td></td></tr>` : ''}
-        ${customer?.phone ? `<tr><td><strong>${escapeHtml(L.customerNo)}</strong> ${directionalValue(customer.phone, base)}</td><td></td></tr>` : ''}
-      </table>
+      <div class="meta-line">
+        <strong>${escapeHtml(invoiceNumberLabel)}</strong>
+        <span class="meta-value">${meta ? directionalValue(meta.invoiceNumber, base) : ''}</span>
+      </div>
+      <div class="meta-line">
+        <strong>${escapeHtml(L.date)}</strong>
+        <span class="meta-value">${meta ? escapeHtml(formatReceiptDate(meta.timestamp.text, tenant, LANGUAGES[lang]?.locale ?? lang)) : ''}</span>
+      </div>
+      ${meta?.table ? `<div class="meta-line"><strong>${escapeHtml(L.table)}</strong><span class="meta-value">${escapeHtml(meta.table.name.text)}</span></div>` : ''}
+      ${customer?.name ? `<div class="meta-line"><strong>${escapeHtml(L.customer)}</strong><span class="meta-value">${escapeHtml(customer.name.text)}</span></div>` : ''}
+      ${customer?.phone ? `<div class="meta-line"><strong>${escapeHtml(L.customerNo)}</strong><span class="meta-value">${directionalValue(customer.phone, base)}</span></div>` : ''}
     </div>
 
     <!-- Items Table -->
     <table class="items-table">
+      <colgroup>
+        <col class="col-item">
+        <col class="col-qty">
+        <col class="col-rate">
+        <col class="col-amt">
+      </colgroup>
       <thead>
         <tr>
-          <th>${escapeHtml(itemsBlock?.header.item.primary ?? '')}</th>
-          <th class="text-end">${escapeHtml(itemsBlock?.header.quantity.primary ?? '')}</th>
-          <th class="text-end">${escapeHtml(L.rate)}</th>
-          <th class="text-end">${escapeHtml(itemsBlock?.header.amount.primary ?? '')}</th>
+          <th class="item-name">${escapeHtml(itemsBlock?.header.item.primary ?? '')}</th>
+          <th class="text-end num">${escapeHtml(itemsBlock?.header.quantity.primary ?? '')}</th>
+          <th class="text-end num">${escapeHtml(L.rate)}</th>
+          <th class="text-end num">${escapeHtml(itemsBlock?.header.amount.primary ?? '')}</th>
         </tr>
       </thead>
       <tbody>
         ${items.map(row => `
           <tr>
-            <td>
+            <td class="item-name">
               ${escapeHtml(row.name.text)}
               ${row.addons.length > 0 ? `<br><small class="text-muted">${row.addons.map(a => `+ ${escapeHtml(a.name.text)}${(a.quantity ?? 1) > 1 ? ` ×${escapeHtml(a.quantity)}` : ''}`).join(', ')}</small>` : ''}
               ${row.specialInstructions ? `<br><small class="text-italic">${escapeHtml(row.specialInstructions.text)}</small>` : ''}
@@ -497,20 +510,26 @@ function paymentLineLabel(label: { conceptId?: string; primary: string }): strin
 
 function getPaperStyles(size: PaperSize): string {
   const mm = size === 'thermal80' ? 80 : 58;
-  const bodySize = size === 'thermal80' ? '13px' : '12px';
+  const bodySize = size === 'thermal80' ? '12px' : '11px';
   const h1Size = size === 'thermal80' ? '18px' : '16px';
-  const totalSize = size === 'thermal80' ? '16px' : '15px';
+  const totalSize = size === 'thermal80' ? '16px' : '14px';
+  const qtyCol = size === 'thermal80' ? '10mm' : '8mm';
+  // Name column keeps the leftover width so «Позиция» / product titles stay
+  // readable. Money columns are only as wide as a nowrap `₸ 11,000.00`.
+  const moneyCol = size === 'thermal80' ? '17mm' : '15mm';
+  const moneySize = size === 'thermal80' ? '11px' : '9px';
   return `
     @page { size: ${mm}mm auto; margin: 0; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
-      width: ${mm}mm;
-      max-width: ${mm}mm;
+      width: 100%;
+      max-width: 100%;
       margin: 0;
       padding: 0;
+      overflow-x: hidden;
       color: #000;
       background: #fff;
-      font-family: 'Courier New', Courier, 'Lucida Console', monospace;
+      font-family: Arial, Helvetica, 'Nimbus Sans', sans-serif;
       font-size: ${bodySize};
       line-height: 1.25;
       font-weight: 700;
@@ -518,34 +537,59 @@ function getPaperStyles(size: PaperSize): string {
       -moz-osx-font-smoothing: unset;
       font-smooth: never;
       font-kerning: none;
+      hyphens: none;
+      -webkit-hyphens: none;
     }
-    .bill-container { width: 100%; max-width: ${mm}mm; margin: 0; padding: 2mm; color: #000; }
-    .reprint-banner { text-align: center; font-size: 18px; font-weight: 800; letter-spacing: 1px; color: #000; border: 3px solid #000; padding: 4px; margin-bottom: 8px; }
+    .bill-container {
+      width: ${mm}mm;
+      max-width: min(${mm}mm, 100%);
+      margin: 0 auto;
+      padding: 2mm;
+      color: #000;
+      overflow-x: hidden;
+    }
+    .reprint-banner { text-align: center; font-size: ${size === 'thermal80' ? '16px' : '13px'}; font-weight: 800; letter-spacing: 0; color: #000; border: 2px solid #000; padding: 3px; margin-bottom: 6px; }
     .online-order-banner { text-align: center; font-size: 16px; font-weight: 800; letter-spacing: 0; border: 2px solid #000; padding: 4px; margin-bottom: 8px; }
     .online-order-banner .online-order-detail { font-size: ${bodySize}; font-weight: 700; letter-spacing: normal; margin-top: 2px; }
     .header { text-align: center; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #000; }
     .header h1 { font-size: ${h1Size}; margin-bottom: 4px; font-weight: 800; color: #000; }
     .bill-details { margin-bottom: 8px; }
-    .bill-details table { width: 100%; }
-    .items-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
-    .items-table th, .items-table td { padding: 3px 2px; border-bottom: 1px solid #000; text-align: start; color: #000; }
+    .meta-line { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 8px; margin-bottom: 2px; }
+    .meta-line strong { flex: 0 0 auto; }
+    .meta-value { margin-inline-start: auto; white-space: nowrap; }
+    .items-table { width: 100%; max-width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 8px; }
+    .items-table .col-item { width: auto; }
+    .items-table .col-qty { width: ${qtyCol}; }
+    .items-table .col-rate, .items-table .col-amt { width: ${moneyCol}; }
+    .items-table th, .items-table td { padding: 3px 1px; border-bottom: 1px solid #000; text-align: start; color: #000; vertical-align: top; }
     .items-table th { font-weight: 800; }
-    .tax-table, .payments-table { width: 50%; margin-inline-start: 50%; border-collapse: collapse; margin-bottom: 8px; }
+    .items-table th.num, .items-table td.num { font-size: ${moneySize}; padding-inline-start: 2px; padding-inline-end: 1px; white-space: nowrap; }
+    .items-table .item-name {
+      hyphens: none;
+      -webkit-hyphens: none;
+      -ms-hyphens: none;
+      word-break: keep-all;
+      overflow-wrap: normal;
+      white-space: normal;
+    }
+    .tax-table, .payments-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
     .tax-table th, .tax-table td, .payments-table th, .payments-table td { padding: 3px 2px; color: #000; }
     .tax-table th, .payments-table th { text-align: start; font-weight: 800; }
     .totals-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
     .totals-table td { padding: 3px 2px; color: #000; }
+    .totals-table td.num { white-space: nowrap; }
     .total-row { border-top: 2px solid #000; font-size: ${totalSize}; }
     .footer { text-align: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid #000; }
     .powered-by { font-size: 11px; margin-top: 6px; color: #000; font-weight: 700; }
     .text-end { text-align: end !important; }
     .num { unicode-bidi: isolate; white-space: nowrap; }
-    .ltr { direction: ltr; unicode-bidi: isolate; }
+    .ltr { direction: ltr; unicode-bidi: isolate; white-space: nowrap; }
     .text-muted, .text-italic { color: #000; font-weight: 700; }
     .text-italic { font-style: italic; }
     @media print {
       .no-print { display: none !important; }
-      html, body { width: ${mm}mm !important; max-width: ${mm}mm !important; }
+      html, body { width: ${mm}mm !important; max-width: ${mm}mm !important; overflow-x: hidden; }
+      .bill-container { width: ${mm}mm !important; max-width: ${mm}mm !important; margin: 0; }
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; color: #000; background: #fff; }
     }
   `;
@@ -557,31 +601,57 @@ function getPaperStyles(size: PaperSize): string {
  */
 function formatAmount(value: number, tenant: ReceiptTenant, trimDecimals = false): string {
   const numeric = Number.isFinite(Number(value)) ? Number(value) : 0;
+  const currency = resolveHtmlReceiptCurrency(tenant);
   const prefs = { currencyDisplay: tenant.currency_display, digits: tenant.number_digits };
   const hasDecimals = Math.round(numeric * 100) % 100 !== 0;
   const isToman =
-    (tenant.currency === 'IRR' || (!tenant.currency && tenant.country === 'IR')) &&
+    (currency === 'IRR' || (!tenant.currency && tenant.country === 'IR')) &&
     (tenant.currency_display === 'toman' || tenant.currency_display === 'toman_short');
 
   // trimDecimals hides trailing .00 only when there is no fractional part.
+  let formatted: string;
   if (trimDecimals && !hasDecimals && !isToman) {
-    const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
+    const locale = getCountryByCode(tenant.country ?? '')?.locale
+      ?? (currency === 'KZT' ? 'ru-KZ' : 'en-US');
     const numberingSystem = tenant.number_digits === 'latin' ? 'latn' : undefined;
     try {
-      return new Intl.NumberFormat(locale, {
+      formatted = new Intl.NumberFormat(locale, {
         style: 'currency',
-        currency: tenant.currency || 'INR',
+        currency,
         currencyDisplay: 'narrowSymbol',
         ...(numberingSystem ? { numberingSystem } : {}),
         minimumFractionDigits: 0,
         maximumFractionDigits: 0,
       }).format(numeric);
     } catch {
-      return formatCurrencyForTenant(numeric, tenant.country, tenant.currency, prefs);
+      formatted = formatCurrencyForTenant(numeric, tenant.country, currency, prefs);
     }
+  } else {
+    formatted = formatCurrencyForTenant(numeric, tenant.country, currency, prefs);
   }
 
-  return formatCurrencyForTenant(numeric, tenant.country, tenant.currency, prefs);
+  return separateTengeFromAmount(formatted);
+}
+
+/**
+ * Guest-check HTML must follow the tenant currency, but FloCafe install
+ * defaults are still IN/INR. KorgenKassa bills (Aisultan, Absolut, …) would
+ * then print ₹. Treat INR-or-empty as unset and fall back to the country
+ * profile, then to KZT — never to the Indian rupee.
+ */
+function resolveHtmlReceiptCurrency(tenant: ReceiptTenant): string {
+  return resolveDisplayCurrency(tenant.country, tenant.currency);
+}
+
+/**
+ * `en-*` locales render KZT as `₸1,800.00` with the sign glued to the digits.
+ * Guest-check columns then look like `3 ₸1,800.00`. Keep a full NBSP on both
+ * prefix and suffix forms so quantity, ₸, and the amount stay distinct.
+ */
+function separateTengeFromAmount(formatted: string): string {
+  return formatted
+    .replace(/₸[\u00A0\u202F\u2009\u2007 ]*(?=\d)/g, '₸\u00A0')
+    .replace(/(?<=\d)[\u00A0\u202F\u2009\u2007 ]*₸/g, '\u00A0₸');
 }
 
 function formatReceiptDate(iso: string, tenant: ReceiptTenant, locale?: string): string {

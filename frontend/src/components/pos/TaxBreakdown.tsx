@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useTranslations } from 'use-intl';
-import { formatCurrencyForTenant } from '@/lib/countries';
+import { formatCurrencyForTenant, resolveDisplayCurrency } from '@/lib/countries';
 import { useAuthStore } from '@/store/auth';
 
 interface TaxLine {
@@ -22,7 +22,7 @@ export default function TaxBreakdown({ taxAmount, taxBreakdown, theme = 'dark' }
   const t = useTranslations('pos');
   const currentTenant = useAuthStore((s) => s.currentTenant);
   const tenantCountry = currentTenant?.country;
-  const tenantCurrency = currentTenant?.currency ?? 'INR';
+  const tenantCurrency = resolveDisplayCurrency(currentTenant?.country, currentTenant?.currency);
   const [expanded, setExpanded] = useState(false);
   const breakdownArray = Array.isArray(taxBreakdown) ? taxBreakdown : [];
   const hasBreakdown = breakdownArray.length > 0;

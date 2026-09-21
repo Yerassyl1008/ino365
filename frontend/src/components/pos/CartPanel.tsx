@@ -7,13 +7,15 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/store/cart';
-import { useHeldOrdersStore } from '@/store/held-orders';
+import { heldOrderErrorMessage, useHeldOrdersStore } from '@/store/held-orders';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useTranslations } from 'use-intl';
 import toast from 'react-hot-toast';
 import type { Table, Order, OrderItem, CartItem } from '@/lib/types';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import DishPrice from './DishPrice';
+import { catalogLineDiscount, visibleDishPrices } from '@shared/dish-discount';
 
 interface Props {
   tables: Table[];
@@ -26,6 +28,8 @@ interface Props {
   existingOrder?: Order | null;
   advancingItemId?: number | null;
   onAdvanceKitchenItem?: (item: OrderItem) => void;
+  /** Floor plan already has order-type tabs — hide the duplicate cart bar. */
+  hideOrderTypeTabs?: boolean;
 }
 
 function nextKitchenItemStatus(status: string): 'preparing' | 'ready' | 'served' | null {
@@ -48,7 +52,7 @@ const orderTypeIcons = {
   online: Globe,
 };
 
-export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem, variant = 'sidebar', existingOrder, advancingItemId, onAdvanceKitchenItem }: Props) {
+export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem, variant = 'sidebar', existingOrder, advancingItemId, onAdvanceKitchenItem, hideOrderTypeTabs = false }: Props) {
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
   const { currentTenant } = useAuthStore();
@@ -73,12 +77,16 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
       await heldOrders.holdOrder(cart.tableId, cart.items, cart.customerId, cart.guestCount, cart.orderNotes);
       cart.clearCart();
       toast.success(t('orderHeldFor', { table: tableName }));
-    } catch {
-      toast.error(t('holdOrderFailed'));
+    } catch (err) {
+      toast.error(heldOrderErrorMessage(err, t('holdOrderFailed')));
     }
   };
 
   const isDrawer = variant === 'drawer';
+  const showDineInExtras = !hideOrderTypeTabs && cart.orderType === 'dine_in';
+  const showDelivery = !hideOrderTypeTabs && cart.orderType === 'delivery';
+  const showOnline = !hideOrderTypeTabs && cart.orderType === 'online';
+  const showOrderHeader = !hideOrderTypeTabs || showDineInExtras || showDelivery || showOnline;
 
   return (
     <div className={
@@ -87,7 +95,9 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
         : 'w-full h-full bg-card rounded-xl border border-border dark:border-border flex flex-col shadow-sm'
     }>
       {/* Order Type */}
+      {showOrderHeader && (
       <div className="p-4 border-b border-border dark:border-border space-y-2">
+        {!hideOrderTypeTabs && (
         <div className="flex gap-1 bg-muted rounded-lg p-1">
           {(['dine_in', 'takeaway', 'delivery', 'online'] as const)
             .filter((type) => isRestaurant || type !== 'dine_in')
@@ -110,8 +120,9 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
               );
             })}
         </div>
+        )}
 
-        {cart.orderType === 'dine_in' && (
+        {showDineInExtras && (
           <div className="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2">
             <div className="flex items-center gap-2 text-sm text-muted-foreground"><Users size={15} /><span>{t('pax')}</span></div>
             <div className="flex items-center gap-2">
@@ -122,7 +133,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
           </div>
         )}
 
-        {cart.orderType === 'dine_in' && (
+        {showDineInExtras && (
           <div className="space-y-2">
             <div className="flex flex-wrap gap-1">
               {Array.from({ length: cart.guestCount }, (_, index) => index + 1).map((seat) => (
@@ -162,7 +173,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
         )}
 
         {/* Delivery address — shown inline when delivery is selected */}
-        {cart.orderType === 'delivery' && (
+        {showDelivery && (
           <div className="flex items-center gap-2">
             <MapPin size={14} className="text-gray-400 shrink-0" />
             <input
@@ -176,7 +187,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
         )}
 
         {/* Online platform + external order id — shown inline when online is selected */}
-        {cart.orderType === 'online' && (
+        {showOnline && (
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <Globe size={14} className="text-gray-400 shrink-0" />
@@ -198,6 +209,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
           </div>
         )}
       </div>
+      )}
 
       {/* Cart Items */}
       <div className={isDrawer ? 'overflow-y-auto p-4 max-h-[40vh]' : 'flex-1 overflow-y-auto p-4'}>
@@ -222,6 +234,11 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                       >
                         {t(kitchenAdvanceLabelKey(next))}
                       </button>
+                    ) : Number(item.discount_amount) > 0 ? (
+                      <span className="inline-flex items-baseline gap-1 text-xs font-medium">
+                        <span className="text-gray-400 line-through">{fmt(Number(item.subtotal) + Number(item.discount_amount))}</span>
+                        <span className="text-blue-600">{fmt(Number(item.total))}</span>
+                      </span>
                     ) : (
                       <span className="text-xs font-medium text-blue-600">{fmt(Number(item.total))}</span>
                     )}
@@ -280,9 +297,23 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                       {t('guestSeat', { seat: item.guest_seat || 1 })} · {t('course', { course: item.course || 1 })}
                     </p>
                   )}
-                  <p className="text-sm text-muted-foreground">
-                    {fmt(Number(item.product.price))}
-                  </p>
+                  {(() => {
+                    const prices = visibleDishPrices(item.product, cart.orderType);
+                    const addonUnit = (item.addons || []).reduce((sum, addon) => sum + (Number(addon.price) || 0) * (Number(addon.quantity) || 1), 0);
+                    const lineOriginal = (prices.original + addonUnit) * item.quantity;
+                    const lineDiscount = catalogLineDiscount(item.product, cart.orderType, prices.original, item.quantity, addonUnit * item.quantity);
+                    const lineDiscounted = Math.max(0, lineOriginal - lineDiscount);
+                    return (
+                      <p className="text-sm text-muted-foreground">
+                        <DishPrice
+                          original={lineOriginal}
+                          discounted={lineDiscount > 0 ? lineDiscounted : null}
+                          className="text-sm font-medium text-foreground"
+                          originalClassName="text-xs text-gray-400 line-through"
+                        />
+                      </p>
+                    );
+                  })()}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button

@@ -24,7 +24,7 @@ export default function ServerStandaloneLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-dvh bg-slate-50 text-[17px] leading-normal text-gray-900 scheme-light">
+    <div className="min-h-0 bg-slate-50 text-[17px] leading-normal text-gray-900 scheme-light flo-phone-page-scroll">
       <KdsHtmlLang />
       {children}
     </div>

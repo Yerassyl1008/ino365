@@ -108,7 +108,53 @@ export function foldUnsupportedCyrillic(text: string): string {
   });
 }
 
-/** ESC t 17 — select PC866. Printers reset this on ESC @. */
+/**
+ * Punctuation that Russian receipts use constantly (`Счёт №`, em dashes)
+ * but generic ESC/POS skip-guards treat as "unsupported" — the whole line
+ * then vanishes and a Cyrillic-only ticket looks blank.
+ */
+const THERMAL_PUNCTUATION_FOLD: Record<string, string> = {
+  '№': 'N',
+  '—': '-',
+  '–': '-',
+  '−': '-',
+  '…': '...',
+  '«': '"',
+  '»': '"',
+  '“': '"',
+  '”': '"',
+  '„': '"',
+  '‘': "'",
+  '’': "'",
+  '×': 'x',
+  '·': ' ',
+  '₸': 'тг',
+  '\u00A0': ' ',
+  '\u202F': ' ',
+};
+
+const THERMAL_PUNCTUATION_RE = /[№—–−…«»“”„‘’×·₸\u00A0\u202F]/g;
+
+export function foldThermalPunctuation(text: string): string {
+  return text.replace(THERMAL_PUNCTUATION_RE, (character) => THERMAL_PUNCTUATION_FOLD[character] ?? character);
+}
+
+/** Cyrillic extras + typographic punctuation → a PC866-safe thermal line. */
+export function foldForCp866Printer(text: string): string {
+  return foldUnsupportedCyrillic(foldThermalPunctuation(text));
+}
+
+export function needsCp866Fold(text: string): boolean {
+  ANY_CYRILLIC_RE.lastIndex = 0;
+  return ANY_CYRILLIC_RE.test(text);
+}
+
+/**
+ * Select single-byte mode and PC866. `FS .` cancels Kanji/GB2312 so high
+ * bytes are glyphs, not a 2-byte Chinese pair (blank on CIS clones).
+ * Cheap firmware also forgets `ESC t` after `ESC !` / `ESC E`, so callers
+ * re-select immediately before each text payload.
+ */
 export function escPosSelectCp866(): number[] {
-  return [0x1B, 0x74, ESC_POS_CP866_TABLE];
+  return [0x1C, 0x2E, 0x1B, 0x74, ESC_POS_CP866_TABLE];
 }

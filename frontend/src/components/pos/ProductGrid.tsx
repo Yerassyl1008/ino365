@@ -10,8 +10,9 @@ import TagBadge from './DietaryBadge';
 import api from '@/lib/api';
 import { useTranslations } from 'use-intl';
 import { parseDbTimestamp } from '@/lib/utils';
-import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { resolveScannedProduct } from '@/lib/scale-barcode';
+import DishPrice from './DishPrice';
+import { visibleDishPrices } from '@shared/dish-discount';
 
 const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string; activeBg: string; activeText: string }> = {
   red: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', activeBg: 'bg-red-500', activeText: 'text-white' },
@@ -57,7 +58,6 @@ export default function ProductGrid({
   const cart = useCartStore();
   const { showProductImages } = usePosSettingsStore();
   const t = useTranslations('pos');
-  const fmt = useFormatCurrency();
   const cartQuantities = useMemo(() => {
     const quantities = new Map<Product['id'], number>();
     for (const item of cart.items) {
@@ -73,7 +73,7 @@ export default function ProductGrid({
   });
 
   return (
-    <div data-testid="pos-product-grid" className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+    <div data-testid="pos-product-grid" className="flex h-auto min-h-0 min-w-0 flex-col overflow-hidden flo-phone-page-scroll md:h-full md:min-h-0 md:flex-1 md:overflow-hidden">
       <div className="shrink-0 mb-3">
         <div className="relative mb-2">
           <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
@@ -98,7 +98,7 @@ export default function ProductGrid({
             className="w-full ps-9 pe-4 py-2.5 bg-card border border-border rounded-xl focus:border-brand outline-none transition-colors text-base md:text-sm"
           />
         </div>
-        <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
+        <div className="flo-h-scroll flex flex-nowrap gap-2 pb-1">
           <button
             onClick={() => setSelectedCategory(null)}
             className={`shrink-0 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
@@ -131,15 +131,14 @@ export default function ProductGrid({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto pb-20 md:pb-0">
-        <div className={`grid gap-3 grid-cols-2 sm:grid-cols-3 ${
-          sidebarOpen
-            ? 'md:grid-cols-3 lg:grid-cols-4'
-            : 'md:grid-cols-4 lg:grid-cols-5'
-        }`}>
+      <div className="flo-primary-scroll pb-20 md:pb-0">
+        <div
+          className="pos-dish-grid grid grid-cols-2 gap-2 content-start items-start auto-rows-max"
+          data-sidebar={sidebarOpen ? 'open' : 'closed'}
+        >
           {filtered.map((product) => {
             const inCartQty = cartQuantities.get(product.id) || 0;
-            
+            const prices = visibleDishPrices(product, cart.orderType);
 
             return (
               <button
@@ -147,7 +146,7 @@ export default function ProductGrid({
                 data-testid="pos-product-card"
                 type="button"
                 onClick={() => onProductClick(product)}
-                className="min-h-36 bg-card rounded-xl p-2.5 border border-border hover:border-brand/40 active:border-brand active:bg-muted/40 hover:shadow-md transition-all text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                className="pos-dish-card w-full h-auto min-h-11 min-w-0 self-start bg-card rounded-xl p-2 border border-border hover:border-brand/40 active:border-brand active:bg-muted/40 hover:shadow-md transition-all text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
               >
                 {!!product.track_inventory && (
                   <>
@@ -169,13 +168,13 @@ export default function ProductGrid({
                 )}
 
                 {showProductImages && (
-                  <div className="w-full aspect-square rounded-lg mb-3 relative overflow-hidden">
+                  <div className="pos-dish-card-media relative mb-1.5 shrink-0 overflow-hidden rounded-lg">
                     {/* Always-visible background tile — no flash when image loads */}
                     <div
                       className="absolute inset-0 flex items-center justify-center"
                       style={{ backgroundColor: nameToColor(product.name) }}
                     >
-                      <span className="text-2xl font-bold text-white/80">
+                      <span className="text-xs font-bold text-white/80" aria-hidden="true">
                         {product.name.substring(0, 2).toUpperCase()}
                       </span>
                     </div>
@@ -184,8 +183,8 @@ export default function ProductGrid({
                     {product.has_image && (
                       <img
                         src={`${api.defaults.baseURL}/products/${product.id}/image?t=${product.updated_at ? parseDbTimestamp(product.updated_at).getTime() : 0}`}
-                        alt={product.name}
-                        className="absolute inset-0 w-full h-full object-cover rounded-lg"
+                        alt=""
+                        className="absolute inset-0 h-full w-full object-cover rounded-lg"
                         onError={(e) => {
                           (e.target as HTMLImageElement).style.display = 'none';
                         }}
@@ -193,31 +192,33 @@ export default function ProductGrid({
                     )}
 
                     {product.tags && product.tags.length > 0 && (
-                      <span className="absolute bottom-1.5 end-1.5 z-10">
+                      <span className="absolute bottom-0.5 end-0.5 z-10">
                         <TagBadge tag={product.tags[0]} />
                       </span>
                     )}
                   </div>
                 )}
 
-                <h3 className="font-medium text-foreground text-sm line-clamp-2 leading-snug">{product.name}</h3>
-                <div className="flex items-center justify-between mt-1">
-                  <p className="text-brand font-bold">
-                    {fmt(Number(product.price))}
-                  </p>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {!showProductImages && product.tags && product.tags.length > 0 && (
-                      <TagBadge tag={product.tags[0]} />
-                    )}
-                    {product.addon_groups && product.addon_groups.length > 0 && (
-                      <span
-                        className="touch-target -me-2 -my-2 rounded-lg text-gray-400"
-                        title={t('customisable')}
-                        aria-label={t('customisable')}
-                      >
-                        <SlidersHorizontal size={16} />
-                      </span>
-                    )}
+                <div className="pos-dish-card-body min-w-0">
+                  <h3 className="font-medium text-foreground text-sm line-clamp-2 leading-snug">{product.name}</h3>
+                  <div className="flex items-center justify-between mt-1">
+                    <p>
+                      <DishPrice original={prices.original} discounted={prices.discounted} />
+                    </p>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {!showProductImages && product.tags && product.tags.length > 0 && (
+                        <TagBadge tag={product.tags[0]} />
+                      )}
+                      {product.addon_groups && product.addon_groups.length > 0 && (
+                        <span
+                          className="touch-target -me-2 -my-2 rounded-lg text-gray-400"
+                          title={t('customisable')}
+                          aria-label={t('customisable')}
+                        >
+                          <SlidersHorizontal size={16} />
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
